@@ -55,7 +55,7 @@ loadSettings()
 local function setupTeleportQueue()
     if queue_on_teleport then
         queue_on_teleport([[
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/YOUR_FILE.lua"))()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/ycjh002-creator/56/refs/heads/main/12"))()
         ]])
     end
 end
