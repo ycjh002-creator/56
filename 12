@@ -78,10 +78,29 @@ local function clickAt(percentX, percentY)
     VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
 end
 
-local function clickJoin()
-    local offsetX = math.random(-12, 12)
-    local offsetY = math.random(-8, 8)
-    clickAt(JoinX + offsetX, JoinY + offsetY)
+local function clickJoinDirect()
+    -- 方法1: 直接找 Join 按鈕觸發
+    local found = false
+    local function findAndClick(parent)
+        for _, obj in pairs(parent:GetDescendants()) do
+            if obj:IsA("TextButton") and obj.Text == "Join" and obj.Visible then
+                pcall(function() firesignal(obj.MouseButton1Click) end)
+                pcall(function() firesignal(obj.Activated) end)
+                found = true
+                return
+            end
+        end
+    end
+    
+    if player.PlayerGui then findAndClick(player.PlayerGui) end
+    if game.CoreGui then findAndClick(game.CoreGui) end
+    
+    -- 方法2: 沒找到就用範圍點擊
+    if not found then
+        local offsetX = math.random(-15, 15)
+        local offsetY = math.random(-17, 17)
+        clickAt(JoinX + offsetX, JoinY + offsetY)
+    end
 end
 
 local function getServerScroll()
@@ -113,18 +132,23 @@ local function serverHop()
 
     local currentJob = game.JobId
     local randomY = math.random(15, 85)
-    local randomOffsetX = math.random(-3, 3)
+    local randomOffsetX = math.random(-5, 5)
 
+    -- 打開列表，等3秒
     clickAt(ServerBtnX, ServerBtnY)
     task.wait(3)
+
+    -- 隨機跳，等0.5秒
     jumpRandom()
     task.wait(0.5)
+
+    -- 點隨機伺服器
     clickAt(ListX + randomOffsetX, randomY)
-    task.wait(0.3)
+    task.wait(0.5)
 
     -- 點 Join，最多試5次
     for i = 1, 5 do
-        clickJoin()
+        clickJoinDirect()
         task.wait(0.5)
         if game.JobId ~= currentJob then break end
     end
@@ -132,7 +156,7 @@ local function serverHop()
     task.wait(3)
     if game.JobId == currentJob then
         for i = 1, 5 do
-            clickJoin()
+            clickJoinDirect()
             task.wait(0.5)
             if game.JobId ~= currentJob then break end
         end
@@ -141,7 +165,7 @@ local function serverHop()
     task.wait(3)
     if game.JobId == currentJob then
         for i = 1, 5 do
-            clickJoin()
+            clickJoinDirect()
             task.wait(0.5)
             if game.JobId ~= currentJob then break end
         end
@@ -331,7 +355,7 @@ local function toggleVoid(state)
 end
 
 if Settings.VoidEnabled then
-    task.delay(5, function() toggleVoid(true) end)
+    task.delay(6, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -391,7 +415,7 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        task.delay(2, function()
+        task.delay(3, function()
             if isVoidEnabled then useSkills() end
         end)
     end
@@ -464,7 +488,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "重生後等2秒→虛空→欄3Z→欄1Z連打",
+    Desc = "選陣營→等3秒→虛空→欄3Z→欄1Z連打",
     Image = "zap"
 })
 
