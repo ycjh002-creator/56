@@ -58,7 +58,7 @@ if queue_on_teleport then
     ]])
 end
 
--- ==================== 換服函數(你提供的版本) ====================
+-- ==================== 換服函數 ====================
 local ServerBtnX = 98.8
 local ServerBtnY = 2
 local JoinX = 69.3
@@ -108,14 +108,22 @@ local function serverHop()
     local currentJob = game.JobId
     local randomY = math.random(15, 85)
 
+    -- 1. 打開列表
     clickAt(ServerBtnX, ServerBtnY)
-    task.wait(3)
+    task.wait(3)  -- 等3秒讓列表載入
+
+    -- 2. 隨機跳
     jumpRandom()
     task.wait(0.5)
+
+    -- 3. 點伺服器
     clickAt(ListX, randomY)
     task.wait(0.3)
+
+    -- 4. 點 Join
     clickAt(JoinX, JoinY)
 
+    -- 等3秒檢查
     task.wait(3)
     if game.JobId == currentJob then
         clickAt(JoinX, JoinY)
@@ -196,7 +204,7 @@ local trackedSounds = {}
 local waitingForReset = false
 
 local noCombatCount = 0
-local maxNoCombat = 3
+local maxNoCombat = 2
 local combatCheckedThisCycle = false
 local combatCheckEnabled = Settings.CombatHopEnabled
 
@@ -461,7 +469,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "⚔️ 戰鬥偵測換服",
-    Desc = "連打期間偵測，連續3輪沒戰鬥→換服",
+    Desc = "連打期間偵測，連續2輪沒戰鬥→換服",
     Image = "crosshair"
 })
 
@@ -469,7 +477,7 @@ MainTab:Divider()
 
 local combatStatus = MainTab:Paragraph({
     Title = "連續未戰鬥",
-    Desc = "0 / 3",
+    Desc = "0 / 2",
     Image = "activity"
 })
 
@@ -482,9 +490,9 @@ MainTab:Toggle({
         saveSettings()
         if not state then
             noCombatCount = 0
-            combatStatus:SetDesc("0 / 3 (已關閉)")
+            combatStatus:SetDesc("0 / 2 (已關閉)")
         else
-            combatStatus:SetDesc(noCombatCount .. " / 3")
+            combatStatus:SetDesc(noCombatCount .. " / 2")
         end
     end
 })
