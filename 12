@@ -236,7 +236,6 @@ local function startSlot1Spam()
             local humanoid = trackedChar:FindFirstChildOfClass("Humanoid")
             if humanoid and humanoid.Health <= 0 then break end
             
-            -- 持續檢查戰鬥狀態
             if combatCheckEnabled and not combatCheckedThisCycle then
                 if IsPlayerInCombat() then
                     combatCheckedThisCycle = true
@@ -248,7 +247,6 @@ local function startSlot1Spam()
             task.wait(0.05)
         end
         
-        -- 連打結束，這輪都沒戰鬥就+1
         if combatCheckEnabled and not combatCheckedThisCycle then
             noCombatCount = noCombatCount + 1
             if noCombatCount >= maxNoCombat then
@@ -369,6 +367,7 @@ local hopStatus = ""
 
 player.CharacterAdded:Connect(function()
     teamSelected = false
+    -- 步驟1: 先選陣營
     task.delay(1, function() selectTeam(selectedTeam) end)
 
     if waitingForReset and not isVoidEnabled then
@@ -380,6 +379,7 @@ player.CharacterAdded:Connect(function()
         return
     end
 
+    -- 步驟2: 等選陣營後過2秒再啟動虛空
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
@@ -421,7 +421,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "選陣營後2秒才啟動其他功能",
+    Desc = "選陣營後過2秒才開始虛空傳送",
     Image = "users"
 })
 
@@ -456,7 +456,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "每輪連打期間偵測戰鬥",
+    Desc = "重生→選陣營→等2秒→虛空→欄3Z→欄1Z連打",
     Image = "zap"
 })
 
@@ -475,7 +475,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "⚔️ 戰鬥偵測換服",
-    Desc = "連續3輪連打沒戰鬥→換服",
+    Desc = "連打期間持續偵測，連續3輪沒戰鬥→換服",
     Image = "crosshair"
 })
 
@@ -528,5 +528,6 @@ task.spawn(function()
     end
 end)
 
+-- 初始：等3秒選陣營 + 2秒延遲 = 5秒後虛空
 task.wait(3)
 selectTeam(selectedTeam)
