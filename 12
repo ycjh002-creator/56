@@ -1,3 +1,7 @@
+-- 防重複載入
+if _G.ScriptLoaded then return end
+_G.ScriptLoaded = true
+
 if not game:IsLoaded() then
     repeat task.wait() until game:IsLoaded()
 end
@@ -51,16 +55,12 @@ end
 
 loadSettings()
 
--- 🔑 換服後重新執行自己
-local function setupTeleportQueue()
-    if queue_on_teleport then
-        queue_on_teleport([[
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/ycjh002-creator/56/refs/heads/main/12"))()
-        ]])
-    end
+-- 🔑 換服後重新執行自己（只設定一次）
+if queue_on_teleport then
+    queue_on_teleport([[
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/ycjh002-creator/56/refs/heads/main/12"))()
+    ]])
 end
-
-setupTeleportQueue()
 
 -- ==================== 換服函數 ====================
 local ServerBtnX = 98.8
@@ -114,13 +114,11 @@ local function serverHop()
         returnToPosition()
     end
     waitingForReset = false
-    
-    setupTeleportQueue()
-    
+
     local currentJob = game.JobId
     local randomY = math.random(15, 85)
     local randomOffsetX = math.random(-3, 3)
-    
+
     clickAt(ServerBtnX, ServerBtnY)
     task.wait(3)
     jumpRandom()
@@ -129,7 +127,7 @@ local function serverHop()
     task.wait(0.3)
     clickJoin()
     task.wait(3)
-    
+
     if game.JobId == currentJob then
         clickJoin()
         task.wait(3)
@@ -171,6 +169,7 @@ end
 
 -- ==================== 陣營選擇 ====================
 local selectedTeam = Settings.Team
+local teamSelected = false
 
 local function selectTeam(team)
     team = team or selectedTeam
@@ -180,6 +179,7 @@ local function selectTeam(team)
         if commF then commF = commF:FindFirstChild("CommF_") end
         if commF then commF:InvokeServer("SetTeam", team) end
     end)
+    teamSelected = true
 end
 
 -- ==================== Haki ====================
@@ -280,7 +280,7 @@ end
 local function toggleVoid(state)
     Settings.VoidEnabled = state
     saveSettings()
-    
+
     if state then
         stopSlot1Spam()
         savePosition()
@@ -297,7 +297,7 @@ local function toggleVoid(state)
 end
 
 if Settings.VoidEnabled then
-    task.delay(4, function() toggleVoid(true) end)
+    task.delay(5, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -342,9 +342,10 @@ local maxNoCombat = 3
 
 player.CharacterAdded:Connect(function()
     checkedThisLife = false
-    
+    teamSelected = false
+
     task.delay(1, function() selectTeam(selectedTeam) end)
-    
+
     if waitingForReset and not isVoidEnabled then
         waitingForReset = false
         hopStatus = "換服中..."
@@ -354,18 +355,20 @@ player.CharacterAdded:Connect(function()
         hopStatus = ""
         return
     end
-    
+
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        task.delay(2, function() if isVoidEnabled then useSkills() end end)
+        task.delay(3, function()
+            if isVoidEnabled and teamSelected then useSkills() end
+        end)
     end
-    
+
     if combatCheckEnabled and not waitingForReset then
-        task.delay(8, function()
+        task.delay(11, function()
             if checkedThisLife then return end
             checkedThisLife = true
-            
+
             if IsPlayerInCombat() then
                 noCombatCount = 0
                 hopStatus = ""
@@ -389,7 +392,7 @@ end)
 
 task.spawn(function()
     while task.wait(1) do
-        if combatCheckEnabled and not checkedThisLife and player.Character then
+        if combatCheckEnabled and not checkedThisLife and player.Character and teamSelected then
             if IsPlayerInCombat() then
                 checkedThisLife = true
                 noCombatCount = 0
@@ -431,7 +434,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "換服後自動重新選擇陣營",
+    Desc = "選陣營後2秒才啟動其他功能",
     Image = "users"
 })
 
@@ -466,7 +469,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "選陣營後1秒啟動虛空",
+    Desc = "選陣營後2秒啟動虛空",
     Image = "zap"
 })
 
@@ -485,7 +488,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "⚔️ 戰鬥偵測換服",
-    Desc = "連續3輪→停虛空→重置→換服",
+    Desc = "選陣營後2秒才開始偵測",
     Image = "crosshair"
 })
 
