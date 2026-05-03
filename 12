@@ -58,7 +58,7 @@ if queue_on_teleport then
     ]])
 end
 
--- ==================== 換服函數 ====================
+-- ==================== 換服函數(你提供的版本) ====================
 local ServerBtnX = 98.8
 local ServerBtnY = 2
 local JoinX = 69.3
@@ -76,12 +76,6 @@ local function clickAt(percentX, percentY)
     VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
     task.wait(0.08)
     VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
-end
-
-local function clickJoin()
-    local offsetX = math.random(-15, 15)
-    local offsetY = math.random(-17, 17)
-    clickAt(JoinX + offsetX, JoinY + offsetY)
 end
 
 local function getServerScroll()
@@ -113,38 +107,21 @@ local function serverHop()
 
     local currentJob = game.JobId
     local randomY = math.random(15, 85)
-    local randomOffsetX = math.random(-5, 5)
 
     clickAt(ServerBtnX, ServerBtnY)
     task.wait(3)
-
     jumpRandom()
     task.wait(0.5)
-
-    clickAt(ListX + randomOffsetX, randomY)
-    task.wait(0.5)
-
-    for i = 1, 5 do
-        clickJoin()
-        task.wait(0.5)
-        if game.JobId ~= currentJob then break end
-    end
+    clickAt(ListX, randomY)
+    task.wait(0.3)
+    clickAt(JoinX, JoinY)
 
     task.wait(3)
     if game.JobId == currentJob then
-        for i = 1, 5 do
-            clickJoin()
-            task.wait(0.5)
-            if game.JobId ~= currentJob then break end
-        end
-    end
-
-    task.wait(3)
-    if game.JobId == currentJob then
-        for i = 1, 5 do
-            clickJoin()
-            task.wait(0.5)
-            if game.JobId ~= currentJob then break end
+        clickAt(JoinX, JoinY)
+        task.wait(3)
+        if game.JobId == currentJob then
+            clickAt(JoinX, JoinY)
         end
     end
 end
@@ -273,18 +250,13 @@ local function startSlot1Spam()
 end
 
 local function useSkills()
-    if not isVoidEnabled then return end
-    local char = player.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    
+    if not isVoidEnabled or not player.Character then return end
     switchToSlot(3)
-    task.wait(0.08)
+    task.wait(0.1)
     pressKey(Enum.KeyCode.Z)
-    task.wait(0.08)
+    task.wait(0.1)
     switchToSlot(1)
-    task.wait(0.08)
+    task.wait(0.1)
     startSlot1Spam()
 end
 
@@ -326,7 +298,7 @@ local function toggleVoid(state)
         isVoidEnabled = true
         noCombatCount = 0
         voidThread = task.spawn(voidLoop)
-        task.wait(0.2)
+        task.wait(0.3)
         useSkills()
     else
         isVoidEnabled = false
@@ -337,7 +309,7 @@ local function toggleVoid(state)
 end
 
 if Settings.VoidEnabled then
-    task.delay(3, function() toggleVoid(true) end)
+    task.delay(6, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -397,8 +369,9 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        task.wait(0.5)  -- 等角色完全載入
-        useSkills()
+        task.delay(3, function()
+            if isVoidEnabled then useSkills() end
+        end)
     end
 end)
 
@@ -434,7 +407,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "每5秒檢查陣營",
+    Desc = "選陣營後過3秒才開始虛空傳送",
     Image = "users"
 })
 
@@ -469,7 +442,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "重生後0.5秒啟動虛空",
+    Desc = "選陣營→等3秒→虛空→欄3Z→欄1Z連打",
     Image = "zap"
 })
 
