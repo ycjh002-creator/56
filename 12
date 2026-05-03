@@ -78,27 +78,10 @@ local function clickAt(percentX, percentY)
     VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
 end
 
-local function clickJoinDirect()
-    local found = false
-    local function findAndClick(parent)
-        for _, obj in pairs(parent:GetDescendants()) do
-            if obj:IsA("TextButton") and obj.Text == "Join" and obj.Visible then
-                pcall(function() firesignal(obj.MouseButton1Click) end)
-                pcall(function() firesignal(obj.Activated) end)
-                found = true
-                return
-            end
-        end
-    end
-    
-    if player.PlayerGui then findAndClick(player.PlayerGui) end
-    if game.CoreGui then findAndClick(game.CoreGui) end
-    
-    if not found then
-        local offsetX = math.random(-15, 15)
-        local offsetY = math.random(-17, 17)
-        clickAt(JoinX + offsetX, JoinY + offsetY)
-    end
+local function clickJoin()
+    local offsetX = math.random(-15, 15)
+    local offsetY = math.random(-17, 17)
+    clickAt(JoinX + offsetX, JoinY + offsetY)
 end
 
 local function getServerScroll()
@@ -142,7 +125,7 @@ local function serverHop()
     task.wait(0.5)
 
     for i = 1, 5 do
-        clickJoinDirect()
+        clickJoin()
         task.wait(0.5)
         if game.JobId ~= currentJob then break end
     end
@@ -150,7 +133,7 @@ local function serverHop()
     task.wait(3)
     if game.JobId == currentJob then
         for i = 1, 5 do
-            clickJoinDirect()
+            clickJoin()
             task.wait(0.5)
             if game.JobId ~= currentJob then break end
         end
@@ -159,7 +142,7 @@ local function serverHop()
     task.wait(3)
     if game.JobId == currentJob then
         for i = 1, 5 do
-            clickJoinDirect()
+            clickJoin()
             task.wait(0.5)
             if game.JobId ~= currentJob then break end
         end
@@ -290,13 +273,18 @@ local function startSlot1Spam()
 end
 
 local function useSkills()
-    if not isVoidEnabled or not player.Character then return end
+    if not isVoidEnabled then return end
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
     switchToSlot(3)
-    task.wait(0.05)
+    task.wait(0.08)
     pressKey(Enum.KeyCode.Z)
-    task.wait(0.05)
+    task.wait(0.08)
     switchToSlot(1)
-    task.wait(0.05)
+    task.wait(0.08)
     startSlot1Spam()
 end
 
@@ -409,7 +397,8 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        useSkills()  -- 立即啟動，不等3秒
+        task.wait(0.5)  -- 等角色完全載入
+        useSkills()
     end
 end)
 
@@ -480,7 +469,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "重生後立即啟動虛空",
+    Desc = "重生後0.5秒啟動虛空",
     Image = "zap"
 })
 
