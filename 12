@@ -79,7 +79,6 @@ local function clickAt(percentX, percentY)
 end
 
 local function clickJoinDirect()
-    -- 方法1: 直接找 Join 按鈕觸發
     local found = false
     local function findAndClick(parent)
         for _, obj in pairs(parent:GetDescendants()) do
@@ -95,7 +94,6 @@ local function clickJoinDirect()
     if player.PlayerGui then findAndClick(player.PlayerGui) end
     if game.CoreGui then findAndClick(game.CoreGui) end
     
-    -- 方法2: 沒找到就用範圍點擊
     if not found then
         local offsetX = math.random(-15, 15)
         local offsetY = math.random(-17, 17)
@@ -134,19 +132,15 @@ local function serverHop()
     local randomY = math.random(15, 85)
     local randomOffsetX = math.random(-5, 5)
 
-    -- 打開列表，等3秒
     clickAt(ServerBtnX, ServerBtnY)
     task.wait(3)
 
-    -- 隨機跳，等0.5秒
     jumpRandom()
     task.wait(0.5)
 
-    -- 點隨機伺服器
     clickAt(ListX + randomOffsetX, randomY)
     task.wait(0.5)
 
-    -- 點 Join，最多試5次
     for i = 1, 5 do
         clickJoinDirect()
         task.wait(0.5)
@@ -298,11 +292,11 @@ end
 local function useSkills()
     if not isVoidEnabled or not player.Character then return end
     switchToSlot(3)
-    task.wait(0.1)
+    task.wait(0.05)
     pressKey(Enum.KeyCode.Z)
-    task.wait(0.1)
+    task.wait(0.05)
     switchToSlot(1)
-    task.wait(0.1)
+    task.wait(0.05)
     startSlot1Spam()
 end
 
@@ -344,7 +338,7 @@ local function toggleVoid(state)
         isVoidEnabled = true
         noCombatCount = 0
         voidThread = task.spawn(voidLoop)
-        task.wait(0.3)
+        task.wait(0.2)
         useSkills()
     else
         isVoidEnabled = false
@@ -355,7 +349,7 @@ local function toggleVoid(state)
 end
 
 if Settings.VoidEnabled then
-    task.delay(6, function() toggleVoid(true) end)
+    task.delay(3, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -415,9 +409,7 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        task.delay(3, function()
-            if isVoidEnabled then useSkills() end
-        end)
+        useSkills()  -- 立即啟動，不等3秒
     end
 end)
 
@@ -488,7 +480,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "選陣營→等3秒→虛空→欄3Z→欄1Z連打",
+    Desc = "重生後立即啟動虛空",
     Image = "zap"
 })
 
