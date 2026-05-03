@@ -106,31 +106,20 @@ local function serverHop()
     waitingForReset = false
 
     local currentJob = game.JobId
-    local randomY = math.random(15, 85)
 
-    -- 1. 打開列表
     clickAt(ServerBtnX, ServerBtnY)
-    task.wait(3)  -- 等3秒讓列表載入
-
-    -- 2. 隨機跳
-    jumpRandom()
-    task.wait(0.5)
-
-    -- 3. 點伺服器
-    clickAt(ListX, randomY)
-    task.wait(0.3)
-
-    -- 4. 點 Join
-    clickAt(JoinX, JoinY)
-
-    -- 等3秒檢查
     task.wait(3)
-    if game.JobId == currentJob then
+
+    local attempts = 0
+    while game.JobId == currentJob and attempts < 10 do
+        attempts = attempts + 1
+        jumpRandom()
+        task.wait(0.5)
+        local randomY = math.random(15, 85)
+        clickAt(ListX, randomY)
+        task.wait(0.3)
         clickAt(JoinX, JoinY)
-        task.wait(3)
-        if game.JobId == currentJob then
-            clickAt(JoinX, JoinY)
-        end
+        task.wait(5)
     end
 end
 
@@ -316,8 +305,9 @@ local function toggleVoid(state)
     end
 end
 
+-- 腳本載入後5秒才開始虛空傳送
 if Settings.VoidEnabled then
-    task.delay(6, function() toggleVoid(true) end)
+    task.delay(5, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -415,7 +405,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "選陣營後過3秒才開始虛空傳送",
+    Desc = "腳本載入後5秒才開始虛空傳送",
     Image = "users"
 })
 
@@ -450,7 +440,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "選陣營→等3秒→虛空→欄3Z→欄1Z連打",
+    Desc = "載入後5秒→虛空→欄3Z→欄1Z連打",
     Image = "zap"
 })
 
@@ -469,7 +459,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "⚔️ 戰鬥偵測換服",
-    Desc = "連打期間偵測，連續2輪沒戰鬥→換服",
+    Desc = "連續2輪沒戰鬥→換服(最多試10次)",
     Image = "crosshair"
 })
 
