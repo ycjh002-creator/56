@@ -165,7 +165,6 @@ end
 
 -- ==================== 陣營選擇 ====================
 local selectedTeam = Settings.Team
-local teamSelected = false
 
 local function selectTeam(team)
     team = team or selectedTeam
@@ -175,7 +174,6 @@ local function selectTeam(team)
         if commF then commF = commF:FindFirstChild("CommF_") end
         if commF then commF:InvokeServer("SetTeam", team) end
     end)
-    teamSelected = true
 end
 
 -- ==================== Haki ====================
@@ -366,10 +364,6 @@ end)
 local hopStatus = ""
 
 player.CharacterAdded:Connect(function()
-    teamSelected = false
-    -- 步驟1: 先選陣營
-    task.delay(1, function() selectTeam(selectedTeam) end)
-
     if waitingForReset and not isVoidEnabled then
         waitingForReset = false
         hopStatus = "換服中..."
@@ -379,12 +373,12 @@ player.CharacterAdded:Connect(function()
         return
     end
 
-    -- 步驟2: 等選陣營後過2秒再啟動虛空
+    -- 等重生後2秒再啟動虛空
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        task.delay(3, function()
-            if isVoidEnabled and teamSelected then useSkills() end
+        task.delay(2, function()
+            if isVoidEnabled then useSkills() end
         end)
     end
 end)
@@ -421,7 +415,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "選陣營後過2秒才開始虛空傳送",
+    Desc = "每5秒檢查陣營，不對就補選",
     Image = "users"
 })
 
@@ -456,7 +450,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "重生→選陣營→等2秒→虛空→欄3Z→欄1Z連打",
+    Desc = "重生後等2秒→虛空→欄3Z→欄1Z連打",
     Image = "zap"
 })
 
@@ -528,6 +522,5 @@ task.spawn(function()
     end
 end)
 
--- 初始：等3秒選陣營 + 2秒延遲 = 5秒後虛空
 task.wait(3)
 selectTeam(selectedTeam)
