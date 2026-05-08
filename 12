@@ -26,6 +26,8 @@ local Settings = {
     Team = "Pirates",
     VoidEnabled = false,
     CombatHopEnabled = true,
+    AutoCloseUI = false,
+    AutoCloseDelay = 3,
 }
 
 local function saveSettings()
@@ -65,6 +67,8 @@ local JoinX = 69.3
 local JoinY = 41.4
 local ListX = 48.0
 local ListY = 50.7
+local KeepAliveX = 49.7
+local KeepAliveY = 53.1
 
 local function clickAt(percentX, percentY)
     local sx = workspace.CurrentCamera.ViewportSize.X
@@ -110,9 +114,16 @@ local function serverHop()
     clickAt(ServerBtnX, ServerBtnY)
     task.wait(3)
 
-    local attempts = 0
-    while game.JobId == currentJob and attempts < 10 do
-        attempts = attempts + 1
+    local keepAliveThread = task.spawn(function()
+        while game.JobId == currentJob do
+            task.wait(5)
+            if game.JobId == currentJob then
+                clickAt(KeepAliveX, KeepAliveY)
+            end
+        end
+    end)
+
+    while game.JobId == currentJob do
         jumpRandom()
         task.wait(0.5)
         local randomY = math.random(15, 85)
@@ -121,6 +132,8 @@ local function serverHop()
         clickAt(JoinX, JoinY)
         task.wait(5)
     end
+
+    if keepAliveThread then task.cancel(keepAliveThread) end
 end
 
 -- ==================== 戰鬥狀態偵測 ====================
@@ -248,12 +261,21 @@ end
 
 local function useSkills()
     if not isVoidEnabled or not player.Character then return end
+    
+    -- 等待裝備欄有武器
+    local waited = 0
+    while not player.Character:FindFirstChildOfClass("Tool") do
+        task.wait(0.1)
+        waited = waited + 0.1
+        if waited > 3 then return end
+    end
+    
     switchToSlot(3)
-    task.wait(0.1)
+    task.wait(0.05)
     pressKey(Enum.KeyCode.Z)
-    task.wait(0.1)
+    task.wait(0.05)
     switchToSlot(1)
-    task.wait(0.1)
+    task.wait(0.05)
     startSlot1Spam()
 end
 
@@ -305,9 +327,8 @@ local function toggleVoid(state)
     end
 end
 
--- 腳本載入後5秒才開始虛空傳送
 if Settings.VoidEnabled then
-    task.delay(5, function() toggleVoid(true) end)
+    task.delay(6, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -367,7 +388,8 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        task.delay(3, function()
+        -- 重生後1秒開始打
+        task.delay(1, function()
             if isVoidEnabled then useSkills() end
         end)
     end
@@ -401,11 +423,12 @@ Window:EditOpenButton({
 
 Window:SetToggleKey(Enum.KeyCode.N)
 
+-- ==================== 主功能分頁 ====================
 local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "腳本載入後5秒才開始虛空傳送",
+    Desc = "重生後1秒開始虛空",
     Image = "users"
 })
 
@@ -440,7 +463,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "載入後5秒→虛空→欄3Z→欄1Z連打",
+    Desc = "重生後1秒→等武器→虛空→欄3Z→欄1Z連打",
     Image = "zap"
 })
 
@@ -459,7 +482,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "⚔️ 戰鬥偵測換服",
-    Desc = "連續2輪沒戰鬥→換服(最多試10次)",
+    Desc = "連續2輪沒戰鬥→換服",
     Image = "crosshair"
 })
 
@@ -500,6 +523,48 @@ MainTab:Button({
     end
 })
 
+-- ==================== 設定分頁 ====================
+local SettingsTab = Window:Tab({ Title = "設定", Icon = "settings" })
+
+SettingsTab:Paragraph({
+    Title = "⚙️ UI 設定",
+    Desc = "載入時自動隱藏UI（只執行一次）",
+    Image = "settings"
+})
+
+SettingsTab:Divider()
+
+local autoCloseStatus = SettingsTab:Paragraph({
+    Title = "載入時自動隱藏",
+    Desc = Settings.AutoCloseUI and "開啟 (" .. Settings.AutoCloseDelay .. "秒後隱藏)" or "關閉",
+    Image = "eye-off"
+})
+
+SettingsTab:Toggle({
+    Title = "載入時自動隱藏UI",
+    Value = Settings.AutoCloseUI,
+    Callback = function(state)
+        Settings.AutoCloseUI = state
+        saveSettings()
+        autoCloseStatus:SetDesc(state and "開啟 (" .. Settings.AutoCloseDelay .. "秒後隱藏)" or "關閉")
+    end
+})
+
+SettingsTab:Slider({
+    Title = "隱藏延遲(秒)",
+    Step = 1,
+    Value = {
+        Min = 1,
+        Max = 10,
+        Default = Settings.AutoCloseDelay
+    },
+    Callback = function(value)
+        Settings.AutoCloseDelay = value
+        saveSettings()
+        autoCloseStatus:SetDesc("開啟 (" .. value .. "秒後隱藏)")
+    end
+})
+
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
@@ -511,6 +576,13 @@ task.spawn(function()
         end)
     end
 end)
+
+-- ==================== 載入時自動隱藏UI ====================
+if Settings.AutoCloseUI then
+    task.delay(Settings.AutoCloseDelay, function()
+        Window:Close()
+    end)
+end
 
 task.wait(3)
 selectTeam(selectedTeam)
