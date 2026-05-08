@@ -198,7 +198,7 @@ task.spawn(function()
 end)
 
 -- ==================== 虛空傳送 + 戰鬥偵測 ====================
-local isVoidEnabled = Settings.VoidEnabled
+local isVoidEnabled = false  -- 預設關閉
 local savedPosition = nil
 local voidThread = nil
 local slot1SpamThread = nil
@@ -299,28 +299,22 @@ local function returnToPosition()
 end
 
 local function toggleVoid(state)
+    isVoidEnabled = state
     Settings.VoidEnabled = state
     saveSettings()
 
     if state then
         stopSlot1Spam()
         savePosition()
-        isVoidEnabled = true
         noCombatCount = 0
         voidThread = task.spawn(voidLoop)
         task.wait(0.3)
         useSkills()
     else
-        isVoidEnabled = false
         stopSlot1Spam()
         if voidThread then task.cancel(voidThread); voidThread = nil end
         returnToPosition()
     end
-end
-
--- 初始虛空：等選陣營後3秒
-if Settings.VoidEnabled then
-    task.delay(6, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -380,7 +374,6 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        -- 重生後2秒馬上打
         task.delay(2, function()
             if isVoidEnabled then useSkills() end
         end)
@@ -420,7 +413,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "初始載入等3秒才虛空，重生後2秒馬上打",
+    Desc = "選陣營後3秒同步設定",
     Image = "users"
 })
 
@@ -455,7 +448,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "重生後2秒→欄3Z→欄1Z連打",
+    Desc = "預設關閉，手動開啟後重生2秒打",
     Image = "zap"
 })
 
@@ -576,5 +569,6 @@ if Settings.AutoCloseUI then
     end)
 end
 
+-- 選陣營後3秒同步設定
 task.wait(3)
 selectTeam(selectedTeam)
