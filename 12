@@ -28,7 +28,6 @@ local Settings = {
     CombatHopEnabled = true,
     AutoCloseUI = false,
     AutoCloseDelay = 3,
-    VoidRespawnDelay = 1,
 }
 
 local function saveSettings()
@@ -262,17 +261,6 @@ end
 
 local function useSkills()
     if not isVoidEnabled or not player.Character then return end
-
-    -- 等待裝備欄有武器，最多等5秒
-    local waited = 0
-    while not player.Character:FindFirstChildOfClass("Tool") do
-        task.wait(0.2)
-        waited = waited + 0.2
-        if waited > 5 then 
-            break
-        end
-    end
-
     switchToSlot(3)
     task.wait(0.05)
     pressKey(Enum.KeyCode.Z)
@@ -330,6 +318,7 @@ local function toggleVoid(state)
     end
 end
 
+-- 初始虛空：等選陣營後3秒
 if Settings.VoidEnabled then
     task.delay(6, function() toggleVoid(true) end)
 end
@@ -391,8 +380,8 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        -- 使用設定中的延遲秒數
-        task.delay(Settings.VoidRespawnDelay, function()
+        -- 重生後2秒馬上打
+        task.delay(2, function()
             if isVoidEnabled then useSkills() end
         end)
     end
@@ -411,7 +400,7 @@ local Window = WindUI:CreateWindow({
     Title = "陣營 + 虛空傳送",
     Icon = "zap",
     Author = "DYHUB",
-    Size = UDim2.fromOffset(380, 460),
+    Size = UDim2.fromOffset(380, 400),
     Theme = "Dark"
 })
 
@@ -431,7 +420,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "每5秒檢查陣營",
+    Desc = "初始載入等3秒才虛空，重生後2秒馬上打",
     Image = "users"
 })
 
@@ -466,7 +455,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "重生後等" .. Settings.VoidRespawnDelay .. "秒→等武器→虛空→欄3Z→欄1Z連打",
+    Desc = "重生後2秒→欄3Z→欄1Z連打",
     Image = "zap"
 })
 
@@ -565,38 +554,6 @@ SettingsTab:Slider({
         Settings.AutoCloseDelay = value
         saveSettings()
         autoCloseStatus:SetDesc("開啟 (" .. value .. "秒後隱藏)")
-    end
-})
-
-SettingsTab:Divider()
-SettingsTab:Divider()
-
-SettingsTab:Paragraph({
-    Title = "🌌 虛空設定",
-    Desc = "重生後延遲秒數",
-    Image = "zap"
-})
-
-SettingsTab:Divider()
-
-local voidDelayStatus = SettingsTab:Paragraph({
-    Title = "重生後虛空延遲",
-    Desc = Settings.VoidRespawnDelay .. " 秒",
-    Image = "timer"
-})
-
-SettingsTab:Slider({
-    Title = "重生後延遲(秒)",
-    Step = 0.5,
-    Value = {
-        Min = 0.5,
-        Max = 5,
-        Default = Settings.VoidRespawnDelay
-    },
-    Callback = function(value)
-        Settings.VoidRespawnDelay = value
-        saveSettings()
-        voidDelayStatus:SetDesc(value .. " 秒")
     end
 })
 
