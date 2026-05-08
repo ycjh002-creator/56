@@ -178,7 +178,7 @@ local function selectTeam(team)
         if commF then commF:InvokeServer("SetTeam", team) end
     end)
     
-    -- 同步虛空傳送設定（選陣營後3秒）
+    -- 選陣營後3秒同步虛空傳送設定
     task.delay(3, function()
         if Settings.VoidEnabled and not isVoidEnabled then
             toggleVoid(true)
@@ -205,7 +205,7 @@ task.spawn(function()
 end)
 
 -- ==================== 虛空傳送 + 戰鬥偵測 ====================
-local isVoidEnabled = false  -- 預設關閉
+local isVoidEnabled = false  -- 一開始強制關閉
 local savedPosition = nil
 local voidThread = nil
 local slot1SpamThread = nil
@@ -420,7 +420,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "選陣營後3秒同步虛空傳送設定",
+    Desc = "立刻選陣營，3秒後同步虛空設定",
     Image = "users"
 })
 
@@ -455,7 +455,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "預設關閉，同步前保持關閉",
+    Desc = "強制關閉→選陣營→3秒後同步設定",
     Image = "zap"
 })
 
@@ -576,6 +576,5 @@ if Settings.AutoCloseUI then
     end)
 end
 
--- 選陣營後3秒同步設定
-task.wait(3)
+-- 立刻選陣營，3秒後同步虛空設定
 selectTeam(selectedTeam)
