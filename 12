@@ -177,6 +177,13 @@ local function selectTeam(team)
         if commF then commF = commF:FindFirstChild("CommF_") end
         if commF then commF:InvokeServer("SetTeam", team) end
     end)
+    
+    -- 同步虛空傳送設定（選陣營後3秒）
+    task.delay(3, function()
+        if Settings.VoidEnabled and not isVoidEnabled then
+            toggleVoid(true)
+        end
+    end)
 end
 
 -- ==================== Haki ====================
@@ -413,7 +420,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "選陣營後3秒同步設定",
+    Desc = "選陣營後3秒同步虛空傳送設定",
     Image = "users"
 })
 
@@ -448,7 +455,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "預設關閉，手動開啟後重生2秒打",
+    Desc = "預設關閉，同步前保持關閉",
     Image = "zap"
 })
 
