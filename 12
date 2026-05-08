@@ -263,12 +263,14 @@ end
 local function useSkills()
     if not isVoidEnabled or not player.Character then return end
 
-    -- 等待裝備欄有武器
+    -- 等待裝備欄有武器，最多等5秒
     local waited = 0
     while not player.Character:FindFirstChildOfClass("Tool") do
-        task.wait(0.1)
-        waited = waited + 0.1
-        if waited > 3 then return end
+        task.wait(0.2)
+        waited = waited + 0.2
+        if waited > 5 then 
+            break
+        end
     end
 
     switchToSlot(3)
