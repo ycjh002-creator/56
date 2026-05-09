@@ -266,17 +266,8 @@ local function useSkills()
     pressKey(Enum.KeyCode.Z)
     task.wait(0.05)
     switchToSlot(1)
-    task.wait(0.05)
-    pressKey(Enum.KeyCode.Z)
-    task.wait(1)  -- 等1秒
-    -- 直接自殺
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.Health = 0
-        end
-    end
+    -- 一直按Z
+    startSlot1Spam()
 end
 
 local function voidLoop()
@@ -409,7 +400,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "UI開關：等2秒→虛空→等2秒→切欄3放Z→切欄1放Z→等1秒→自殺",
+    Desc = "UI開關：等2秒→虛空→等2秒→切欄3放Z→切欄1一直按Z",
     Image = "users"
 })
 
@@ -444,7 +435,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "UI:等2秒→虛空→等2秒→切欄3放Z→切欄1放Z→等1秒→自殺 | 重生:虛空→等2秒→同上",
+    Desc = "UI:等2秒→虛空→等2秒→切欄3放Z→切欄1一直按Z | 重生:虛空→等2秒→同上",
     Image = "zap"
 })
 
