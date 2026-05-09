@@ -307,10 +307,15 @@ local function toggleVoid(state)
         savePosition()
         isVoidEnabled = true
         noCombatCount = 0
-        voidThread = task.spawn(voidLoop)
-        -- 開啟後等2秒才開始放技能
-        task.wait(2)
-        useSkills()
+        -- UI開關：等2秒 → 虛空傳送 → 等2秒 → 放技能
+        task.delay(2, function()
+            if isVoidEnabled then
+                voidThread = task.spawn(voidLoop)
+                task.delay(2, function()
+                    if isVoidEnabled then useSkills() end
+                end)
+            end
+        end)
     else
         isVoidEnabled = false
         stopSlot1Spam()
@@ -319,9 +324,9 @@ local function toggleVoid(state)
     end
 end
 
--- 初始虛空
+-- 初始虛空：等選陣營後開始
 if Settings.VoidEnabled then
-    task.delay(5, function() toggleVoid(true) end)
+    task.delay(6, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -381,7 +386,8 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        -- 重生後等2秒再開始打
+        -- 重生後：直接虛空傳送 → 等2秒 → 放技能
+        voidThread = task.spawn(voidLoop)
         task.delay(2, function()
             if isVoidEnabled then useSkills() end
         end)
@@ -421,7 +427,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "開啟虛空後等2秒才開始",
+    Desc = "UI開關：等2秒→虛空→等2秒→連打",
     Image = "users"
 })
 
@@ -456,7 +462,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "開啟後等2秒→欄3Z→欄1Z連打",
+    Desc = "UI:等2秒→虛空→等2秒→連打 | 重生:虛空→等2秒→連打",
     Image = "zap"
 })
 
