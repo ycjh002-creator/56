@@ -109,6 +109,9 @@ local function serverHop()
     end
     waitingForReset = false
 
+    -- 🔑 換服前強制儲存設定
+    saveSettings()
+
     local currentJob = game.JobId
 
     clickAt(ServerBtnX, ServerBtnY)
@@ -474,7 +477,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "⚔️ 戰鬥偵測換服",
-    Desc = "連續2輪沒戰鬥→換服",
+    Desc = "連續2輪沒戰鬥→換服(換服前儲存設定)",
     Image = "crosshair"
 })
 
