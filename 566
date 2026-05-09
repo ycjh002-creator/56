@@ -230,6 +230,8 @@ local function startSlot1Spam()
     if not trackedChar then return end
 
     combatCheckedThisCycle = false
+    local hitCount = 0
+    local resetThreshold = 10
 
     slot1SpamThread = task.spawn(function()
         while isVoidEnabled and player.Character == trackedChar do
@@ -244,6 +246,26 @@ local function startSlot1Spam()
             end
 
             pressKey(Enum.KeyCode.Z)
+            hitCount = hitCount + 1
+
+            if hitCount >= resetThreshold then
+                task.wait(0.5)
+                local char = player.Character
+                if char then
+                    local h = char:FindFirstChild("Humanoid")
+                    if h and h.Health > 0 then
+                        h.Health = 0
+                        if waitingForReset then
+                            isVoidEnabled = false
+                            stopSlot1Spam()
+                            if voidThread then task.cancel(voidThread); voidThread = nil end
+                            returnToPosition()
+                        end
+                    end
+                end
+                break
+            end
+
             task.wait(0.05)
         end
 
@@ -306,7 +328,6 @@ local function toggleVoid(state)
         savePosition()
         isVoidEnabled = true
         noCombatCount = 0
-        -- UI開關：等2秒 → 虛空傳送 → 等2秒 → 放技能
         task.delay(2, function()
             if isVoidEnabled then
                 voidThread = task.spawn(voidLoop)
@@ -328,44 +349,6 @@ if Settings.VoidEnabled then
     task.delay(6, function() toggleVoid(true) end)
 end
 
--- ==================== 虛空傳送按Z後0.5秒重生 ====================
-local lastResetTime = 0
-local RESET_COOLDOWN = 3
-
-local function doVoidReset()
-    local currentTime = os.clock()
-    if currentTime - lastResetTime < RESET_COOLDOWN then return end
-    lastResetTime = currentTime
-
-    switchToSlot(1)
-    task.wait(0.05)
-    pressKey(Enum.KeyCode.Z)
-    task.wait(0.05)
-    task.wait(0.5)
-
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChild("Humanoid")
-        if humanoid then
-            humanoid.Health = 0
-            if waitingForReset then
-                isVoidEnabled = false
-                stopSlot1Spam()
-                if voidThread then task.cancel(voidThread); voidThread = nil end
-                returnToPosition()
-            end
-        end
-    end
-end
-
-local UIS = game:GetService("UserInputService")
-UIS.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.Z and isVoidEnabled then
-        task.spawn(doVoidReset)
-    end
-end)
-
 -- ==================== 角色重生 ====================
 local hopStatus = ""
 
@@ -382,7 +365,6 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        -- 重生後：直接虛空傳送 → 等2秒 → 放技能
         voidThread = task.spawn(voidLoop)
         task.delay(2, function()
             if isVoidEnabled then useSkills() end
