@@ -209,7 +209,7 @@ task.spawn(function()
     while task.wait(0.1) do autoHaki() end
 end)
 
--- ==================== 虛空傳送 + 戰鬥偵測 ====================
+-- ==================== 虛空傳送 + 技能施放 ====================
 local function pressKey(keyCode)
     VIM:SendKeyEvent(true, keyCode, false, nil)
     task.wait(0.03)
@@ -261,8 +261,12 @@ end
 
 local function useSkills()
     if not isVoidEnabled or not player.Character then return end
+    switchToSlot(3)
+    task.wait(0.05)
+    pressKey(Enum.KeyCode.Z)
+    task.wait(0.05)
     switchToSlot(1)
-    task.wait(0.1)
+    task.wait(0.05)
     pressKey(Enum.KeyCode.Z)
     task.wait(0.3)
     -- 直接自殺
@@ -405,7 +409,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "UI開關：等2秒→虛空→等2秒→切欄1放Z→自殺",
+    Desc = "UI開關：等2秒→虛空→等2秒→切欄3放Z→切欄1放Z→自殺",
     Image = "users"
 })
 
@@ -440,7 +444,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "UI:等2秒→虛空→等2秒→切欄1放Z→自殺 | 重生:虛空→等2秒→放Z→自殺",
+    Desc = "UI:等2秒→虛空→等2秒→切欄3放Z→切欄1放Z→自殺 | 重生:虛空→等2秒→放Z→自殺",
     Image = "zap"
 })
 
