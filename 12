@@ -109,7 +109,6 @@ local function serverHop()
     end
     waitingForReset = false
 
-    -- 🔑 換服前強制儲存設定
     saveSettings()
 
     local currentJob = game.JobId
@@ -181,10 +180,18 @@ local function selectTeam(team)
         if commF then commF:InvokeServer("SetTeam", team) end
     end)
     
-    -- 選陣營後3秒同步虛空傳送設定
+    -- 選陣營後3秒強制同步虛空傳送設定
     task.delay(3, function()
-        if Settings.VoidEnabled and not isVoidEnabled then
-            toggleVoid(true)
+        local shouldEnable = Settings.VoidEnabled
+        if shouldEnable and not isVoidEnabled then
+            isVoidEnabled = true
+            stopSlot1Spam()
+            savePosition()
+            noCombatCount = 0
+            if voidThread then task.cancel(voidThread) end
+            voidThread = task.spawn(voidLoop)
+            task.wait(0.3)
+            useSkills()
         end
     end)
 end
@@ -208,7 +215,7 @@ task.spawn(function()
 end)
 
 -- ==================== 虛空傳送 + 戰鬥偵測 ====================
-local isVoidEnabled = false  -- 一開始強制關閉
+local isVoidEnabled = false
 local savedPosition = nil
 local voidThread = nil
 local slot1SpamThread = nil
@@ -317,6 +324,7 @@ local function toggleVoid(state)
         stopSlot1Spam()
         savePosition()
         noCombatCount = 0
+        if voidThread then task.cancel(voidThread) end
         voidThread = task.spawn(voidLoop)
         task.wait(0.3)
         useSkills()
@@ -423,7 +431,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "立刻選陣營，3秒後同步虛空設定",
+    Desc = "立刻選陣營，3秒後強制同步虛空",
     Image = "users"
 })
 
@@ -458,7 +466,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "強制關閉→選陣營→3秒後同步設定",
+    Desc = "強制關閉→選陣營→3秒後強制同步",
     Image = "zap"
 })
 
@@ -477,7 +485,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "⚔️ 戰鬥偵測換服",
-    Desc = "連續2輪沒戰鬥→換服(換服前儲存設定)",
+    Desc = "連續2輪沒戰鬥→換服(換服前儲存)",
     Image = "crosshair"
 })
 
@@ -579,5 +587,5 @@ if Settings.AutoCloseUI then
     end)
 end
 
--- 立刻選陣營，3秒後同步虛空設定
+-- 立刻選陣營，3秒後強制同步虛空設定
 selectTeam(selectedTeam)
