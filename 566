@@ -329,22 +329,6 @@ if Settings.VoidEnabled then
     task.delay(6, function() toggleVoid(true) end)
 end
 
-local function resetCharacter()
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.Health = 0
-            if waitingForReset then
-                isVoidEnabled = false
-                stopSlot1Spam()
-                if voidThread then task.cancel(voidThread); voidThread = nil end
-                returnToPosition()
-            end
-        end
-    end
-end
-
 -- ==================== 角色重生 ====================
 player.CharacterAdded:Connect(function()
     if waitingForReset and not isVoidEnabled then
@@ -400,7 +384,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "UI開關：等2秒→虛空→等2秒→切欄3放Z→切欄1一直按Z",
+    Desc = "UI開關：等2秒→虛空→等2秒→切欄3放Z→切欄1一直按Z | 重生後自動循環",
     Image = "users"
 })
 
@@ -553,7 +537,7 @@ end)
 if Settings.AutoCloseUI then
     task.delay(Settings.AutoCloseDelay, function()
         Window:Close()
-    end)
+    end
 end
 
 task.wait(3)
