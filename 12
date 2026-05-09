@@ -109,8 +109,6 @@ local function serverHop()
     end
     waitingForReset = false
 
-    saveSettings()
-
     local currentJob = game.JobId
 
     clickAt(ServerBtnX, ServerBtnY)
@@ -179,21 +177,6 @@ local function selectTeam(team)
         if commF then commF = commF:FindFirstChild("CommF_") end
         if commF then commF:InvokeServer("SetTeam", team) end
     end)
-    
-    -- 選陣營後3秒強制同步虛空傳送設定
-    task.delay(3, function()
-        local shouldEnable = Settings.VoidEnabled
-        if shouldEnable and not isVoidEnabled then
-            isVoidEnabled = true
-            stopSlot1Spam()
-            savePosition()
-            noCombatCount = 0
-            if voidThread then task.cancel(voidThread) end
-            voidThread = task.spawn(voidLoop)
-            task.wait(0.3)
-            useSkills()
-        end
-    end)
 end
 
 -- ==================== Haki ====================
@@ -215,7 +198,7 @@ task.spawn(function()
 end)
 
 -- ==================== 虛空傳送 + 戰鬥偵測 ====================
-local isVoidEnabled = false
+local isVoidEnabled = Settings.VoidEnabled
 local savedPosition = nil
 local voidThread = nil
 local slot1SpamThread = nil
@@ -316,23 +299,29 @@ local function returnToPosition()
 end
 
 local function toggleVoid(state)
-    isVoidEnabled = state
     Settings.VoidEnabled = state
     saveSettings()
 
     if state then
         stopSlot1Spam()
         savePosition()
+        isVoidEnabled = true
         noCombatCount = 0
-        if voidThread then task.cancel(voidThread) end
         voidThread = task.spawn(voidLoop)
-        task.wait(0.3)
+        -- 開啟後等2秒才開始放技能
+        task.wait(2)
         useSkills()
     else
+        isVoidEnabled = false
         stopSlot1Spam()
         if voidThread then task.cancel(voidThread); voidThread = nil end
         returnToPosition()
     end
+end
+
+-- 初始虛空
+if Settings.VoidEnabled then
+    task.delay(5, function() toggleVoid(true) end)
 end
 
 local function resetCharacter()
@@ -392,6 +381,7 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
+        -- 重生後等2秒再開始打
         task.delay(2, function()
             if isVoidEnabled then useSkills() end
         end)
@@ -431,7 +421,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "立刻選陣營，3秒後強制同步虛空",
+    Desc = "開啟虛空後等2秒才開始",
     Image = "users"
 })
 
@@ -466,7 +456,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "強制關閉→選陣營→3秒後強制同步",
+    Desc = "開啟後等2秒→欄3Z→欄1Z連打",
     Image = "zap"
 })
 
@@ -485,7 +475,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "⚔️ 戰鬥偵測換服",
-    Desc = "連續2輪沒戰鬥→換服(換服前儲存)",
+    Desc = "連續2輪沒戰鬥→換服",
     Image = "crosshair"
 })
 
@@ -587,5 +577,5 @@ if Settings.AutoCloseUI then
     end)
 end
 
--- 立刻選陣營，3秒後強制同步虛空設定
+task.wait(3)
 selectTeam(selectedTeam)
