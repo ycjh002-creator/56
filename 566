@@ -56,7 +56,7 @@ loadSettings()
 -- 🔑 換服後重新執行自己
 if queue_on_teleport then
     queue_on_teleport([[
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/ycjh002-creator/56/refs/heads/main/566"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/ycjh002-creator/56/refs/heads/main/12"))()
     ]])
 end
 
@@ -258,10 +258,10 @@ local function startSlot1Spam()
             pressKey(Enum.KeyCode.Z)
             task.wait(0.1)
 
-            -- 按完Z後直接自殺
+            -- 按完Z後等待0.4秒再自殺
             if not hasPressedZ then
                 hasPressedZ = true
-                task.wait(0.2)
+                task.wait(0.4)
                 suicide(trackedChar)
                 break
             end
@@ -282,6 +282,12 @@ end
 
 local function useSkills()
     if not isVoidEnabled or not player.Character then return end
+    -- 先切欄位3按Z
+    switchToSlot(3)
+    task.wait(0.05)
+    pressKey(Enum.KeyCode.Z)
+    task.wait(0.05)
+    -- 再切欄位1按Z（會自動自殺）
     switchToSlot(1)
     task.wait(0.05)
     startSlot1Spam()
@@ -401,7 +407,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "UI開關：等2秒→虛空→等2秒→連打",
+    Desc = "UI開關：等2秒→虛空→等2秒→放技能自殺",
     Image = "users"
 })
 
@@ -436,7 +442,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "UI:等2秒→虛空→等2秒→按Z自殺 | 重生:虛空→等2秒→按Z自殺",
+    Desc = "流程：切欄3按Z → 切欄1按Z → 等0.4秒自殺",
     Image = "zap"
 })
 
@@ -555,8 +561,8 @@ end)
 if Settings.AutoCloseUI then
     task.delay(Settings.AutoCloseDelay, function()
         Window:Close()
-    end)
-end
+    end
+end)
 
 task.wait(3)
 selectTeam(selectedTeam)
