@@ -4284,7 +4284,7 @@ Tabs.ActivityTab:Button({
     end
 })
       
--- ==================== 秒殺功能頁 (完整整合版 - 含龍泉z秒殺全自動) =====================
+-- ===================== 秒殺功能頁 (完整整合版) =====================
 
 -- ==================== 秒殺配置 ====================
 local InstantKillConfig = {
@@ -4308,18 +4308,21 @@ local TeleportZxConfig = {
     SkillDelay = 0.3,
 }
 
--- ==================== 龍泉z秒殺全自動配置 ====================
-local LongQuanZKillConfig = {
+-- ==================== 龍拳z秒殺配置 (監聽ZRelease音效自動重置角色) ====================
+local DragonZKillConfig = {
     Enabled = false,
-    MainThread = nil,
-    VoidThread = nil,
-    RESET_THRESHOLD = 3,
-    RESET_DELAY = 0,
-    SPAWN_DELAY = 0.2,
-    StatusText = "閒置中",
+    SavedPosition = nil,
+    LoopThread = nil,
+    TrackedSounds = {},
+    SoundDetectionConnection = nil,
 }
 
-local VOID_POSITION = CFrame.new(0, 7e29, 0)
+-- ==================== 創造z秒殺配置 (虛空傳送開關) ====================
+local CreateZConfig = {
+    Enabled = false,
+    SavedPosition = nil,
+    LoopThread = nil,
+}
 
 -- ==================== 虛空連招狀態 ====================
 local VoidComboState = {
@@ -4347,11 +4350,8 @@ local aimbotModeDropdown = nil
 local saddiHitToggle = nil
 local doughDripToggle = nil
 local buddhaHitToggle = nil
-local longquanZButton = nil
-local longquanZStatusLabel = nil
-local teleportZxButton = nil
-local voidComboButton = nil
-local refreshPlayerButton = nil
+local dragonZKillButton = nil
+local createZButton = nil
 
 -- ==================== 秒殺核心功能 ====================
 local function SetupVoidCharacter(char)
@@ -4445,122 +4445,6 @@ local function StopInstantKill()
     trackedSounds = {}
     VoidState.IsTeleporting = false
     WindUI:Notify({ Title = "秒殺功能", Content = "已關閉", Duration = 2 })
-end
-
--- ==================== 龍泉z秒殺全自動 ====================
-local function VoidLock_LongQuan(character)
-    while LongQuanZKillConfig.Enabled and character and character.Parent do
-        local root = character:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.CFrame = VOID_POSITION
-        end
-        task.wait()
-    end
-end
-
-local function LongQuanZ_MainLoop()
-    while LongQuanZKillConfig.Enabled do
-        LongQuanZKillConfig.StatusText = "等待角色..."
-        
-        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local root = char:FindFirstChild("HumanoidRootPart")
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        
-        if not root or not humanoid then
-            task.wait(0.5)
-            continue
-        end
-        
-        LongQuanZKillConfig.StatusText = "等待 " .. LongQuanZKillConfig.SPAWN_DELAY .. " 秒..."
-        task.wait(LongQuanZKillConfig.SPAWN_DELAY)
-        
-        root.CFrame = VOID_POSITION
-        LongQuanZKillConfig.VoidThread = task.spawn(function() VoidLock_LongQuan(char) end)
-        
-        pcall(function()
-            local VIM = game:GetService("VirtualInputManager")
-            VIM:SendKeyEvent(true, Enum.KeyCode.One, false, nil)
-            task.wait(0.01)
-            VIM:SendKeyEvent(false, Enum.KeyCode.One, false, nil)
-        end)
-        
-        local hitCount = 0
-        while LongQuanZKillConfig.Enabled and humanoid.Health > 0 and LocalPlayer.Character == char do
-            pcall(function()
-                local VIM = game:GetService("VirtualInputManager")
-                VIM:SendKeyEvent(true, Enum.KeyCode.Z, false, nil)
-                task.wait(0.01)
-                VIM:SendKeyEvent(false, Enum.KeyCode.Z, false, nil)
-            end)
-            
-            hitCount = hitCount + 1
-            LongQuanZKillConfig.StatusText = "按Z中... (" .. hitCount .. "/" .. LongQuanZKillConfig.RESET_THRESHOLD .. ")"
-            
-            if hitCount >= LongQuanZKillConfig.RESET_THRESHOLD then
-                LongQuanZKillConfig.StatusText = "重生中..."
-                if humanoid.Health > 0 then
-                    humanoid.Health = 0
-                end
-                break
-            end
-            
-            task.wait(0.01)
-        end
-        
-        if LongQuanZKillConfig.VoidThread then
-            task.cancel(LongQuanZKillConfig.VoidThread)
-            LongQuanZKillConfig.VoidThread = nil
-        end
-        
-        task.wait(0.1)
-    end
-    
-    LongQuanZKillConfig.StatusText = "已關閉"
-end
-
-local function ToggleLongQuanZKill(state)
-    LongQuanZKillConfig.Enabled = state
-    
-    if state then
-        LongQuanZKillConfig.StatusText = "啟動中..."
-        LongQuanZKillConfig.MainThread = task.spawn(LongQuanZ_MainLoop)
-        
-        if longquanZButton then
-            longquanZButton:SetTitle("龍泉z秒殺全自動 [運作中]")
-        end
-        
-        WindUI:Notify({
-            Title = "龍泉z秒殺全自動",
-            Content = "已開啟 - 重生 → 虛空 → 切欄1 → 按" .. LongQuanZKillConfig.RESET_THRESHOLD .. "次Z → 重生 → 循環",
-            Duration = 4,
-            Icon = "zap"
-        })
-    else
-        if LongQuanZKillConfig.MainThread then
-            task.cancel(LongQuanZKillConfig.MainThread)
-            LongQuanZKillConfig.MainThread = nil
-        end
-        if LongQuanZKillConfig.VoidThread then
-            task.cancel(LongQuanZKillConfig.VoidThread)
-            LongQuanZKillConfig.VoidThread = nil
-        end
-        
-        LongQuanZKillConfig.StatusText = "已關閉"
-        
-        if longquanZButton then
-            longquanZButton:SetTitle("龍泉z秒殺全自動 [關閉]")
-        end
-        
-        WindUI:Notify({
-            Title = "龍泉z秒殺全自動",
-            Content = "已關閉",
-            Duration = 2
-        })
-    end
-    
-    if longquanZStatusLabel then
-        longquanZStatusLabel:SetDesc(LongQuanZKillConfig.StatusText)
-    end
 end
 
 -- ==================== 玩家列表功能 ====================
@@ -4742,6 +4626,198 @@ local function PerformTeleportAndZx()
     return true
 end
 
+-- ==================== 龍拳z秒殺 (監聽ZRelease音效自動重置角色) ====================
+local function ResetCharacter_DragonZ()
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Health = 0
+            print("角色已重置 (偵測到 ZRelease 音效)")
+        end
+    end
+end
+
+local function ReturnToPosition_DragonZ()
+    if not DragonZKillConfig.SavedPosition then return end
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = DragonZKillConfig.SavedPosition
+        end
+    end
+end
+
+local function SavePosition_DragonZ()
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            DragonZKillConfig.SavedPosition = root.CFrame
+        end
+    end
+end
+
+local function DragonZKill_Loop()
+    while DragonZKillConfig.Enabled do
+        local char = LocalPlayer.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = CFrame.new(0, 7e29, 0)
+            end
+        end
+        task.wait()
+    end
+end
+
+local function StartDragonZSoundDetection()
+    if DragonZKillConfig.SoundDetectionConnection then
+        DragonZKillConfig.SoundDetectionConnection:Disconnect()
+    end
+    
+    DragonZKillConfig.TrackedSounds = {}
+    
+    DragonZKillConfig.SoundDetectionConnection = RunService.RenderStepped:Connect(function()
+        if not DragonZKillConfig.Enabled then return end
+        
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name == "ZRelease" and obj:IsA("Sound") and obj.IsPlaying and not DragonZKillConfig.TrackedSounds[obj] then
+                DragonZKillConfig.TrackedSounds[obj] = true
+                ResetCharacter_DragonZ()
+            end
+        end
+        
+        local char = LocalPlayer.Character
+        if char then
+            for _, obj in ipairs(char:GetDescendants()) do
+                if obj.Name == "ZRelease" and obj:IsA("Sound") and obj.IsPlaying and not DragonZKillConfig.TrackedSounds[obj] then
+                    DragonZKillConfig.TrackedSounds[obj] = true
+                    ResetCharacter_DragonZ()
+                end
+            end
+        end
+        
+        for soundObj in pairs(DragonZKillConfig.TrackedSounds) do
+            if not soundObj.Parent or not soundObj.IsPlaying then
+                DragonZKillConfig.TrackedSounds[soundObj] = nil
+            end
+        end
+    end)
+    print("龍拳z秒殺聲音監聽已啟動")
+end
+
+local function StopDragonZSoundDetection()
+    if DragonZKillConfig.SoundDetectionConnection then
+        DragonZKillConfig.SoundDetectionConnection:Disconnect()
+        DragonZKillConfig.SoundDetectionConnection = nil
+        DragonZKillConfig.TrackedSounds = {}
+        print("龍拳z秒殺聲音監聽已停止")
+    end
+end
+
+local function ToggleDragonZKill()
+    if DragonZKillConfig.Enabled then
+        DragonZKillConfig.Enabled = false
+        
+        if DragonZKillConfig.LoopThread then
+            task.cancel(DragonZKillConfig.LoopThread)
+            DragonZKillConfig.LoopThread = nil
+        end
+        
+        StopDragonZSoundDetection()
+        ReturnToPosition_DragonZ()
+        
+        if dragonZKillButton then
+            dragonZKillButton:SetTitle("龍拳z秒殺 [關閉]")
+        end
+        
+        WindUI:Notify({ Title = "龍拳z秒殺", Content = "已關閉，已回到原地", Duration = 2 })
+    else
+        DragonZKillConfig.Enabled = true
+        SavePosition_DragonZ()
+        StartDragonZSoundDetection()
+        DragonZKillConfig.LoopThread = task.spawn(DragonZKill_Loop)
+        
+        if dragonZKillButton then
+            dragonZKillButton:SetTitle("龍拳z秒殺 [運作中]")
+        end
+        
+        WindUI:Notify({ 
+            Title = "龍拳z秒殺", 
+            Content = "已開啟 - 監聽 ZRelease 音效自動重置角色", 
+            Duration = 4 
+        })
+    end
+end
+
+-- ==================== 創造z秒殺 (虛空傳送開關) ====================
+local function SavePosition_CreateZ()
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            CreateZConfig.SavedPosition = root.CFrame
+        end
+    end
+end
+
+local function ReturnToPosition_CreateZ()
+    if not CreateZConfig.SavedPosition then return end
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = CreateZConfig.SavedPosition
+        end
+    end
+end
+
+local function CreateZ_Loop()
+    while CreateZConfig.Enabled do
+        local char = LocalPlayer.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = CFrame.new(0, 7e29, 0)
+            end
+        end
+        task.wait()
+    end
+end
+
+local function ToggleCreateZ()
+    if CreateZConfig.Enabled then
+        CreateZConfig.Enabled = false
+        if CreateZConfig.LoopThread then
+            task.cancel(CreateZConfig.LoopThread)
+            CreateZConfig.LoopThread = nil
+        end
+        ReturnToPosition_CreateZ()
+        
+        if createZButton then
+            createZButton:SetTitle("龍拳z秒殺 創造z秒殺 雷爪拳圖 龍刀拳圖 [關閉]")
+        end
+        
+        WindUI:Notify({ Title = "創造z秒殺", Content = "已關閉，已回到原地", Duration = 2 })
+    else
+        CreateZConfig.Enabled = true
+        SavePosition_CreateZ()
+        CreateZConfig.LoopThread = task.spawn(CreateZ_Loop)
+        
+        if createZButton then
+            createZButton:SetTitle("龍拳z秒殺 創造z秒殺 雷爪拳圖 龍刀拳圖 [運作中]")
+        end
+        
+        WindUI:Notify({ 
+            Title = "創造z秒殺", 
+            Content = "已開啟 - 虛空傳送中", 
+            Duration = 4 
+        })
+    end
+end
+
 -- ==================== 雷爪z龍刀z全圖 ====================
 local function PerformVoidCombo()
     if VoidComboState.IsRunning then return end
@@ -4785,12 +4861,26 @@ local function PerformVoidCombo()
     VoidComboState.IsRunning = false
 end
 
--- ==================== 角色重生處理 ====================
+-- 角色重生處理
 LocalPlayer.CharacterAdded:Connect(function(char)
-    if LongQuanZKillConfig.Enabled then
-        task.wait(0.1)
+    if DragonZKillConfig.Enabled then
+        task.wait(0.5)
+        SavePosition_DragonZ()
+    end
+    if CreateZConfig.Enabled then
+        task.wait(0.5)
+        SavePosition_CreateZ()
     end
 end)
+
+-- 首次儲存位置
+if LocalPlayer.Character then
+    local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        DragonZKillConfig.SavedPosition = root.CFrame
+        CreateZConfig.SavedPosition = root.CFrame
+    end
+end
 
 -- ==================== UI 介面 ====================
 
@@ -4863,7 +4953,7 @@ aimbotModeDropdown = Tabs.InstantKillTab:Dropdown({
 Tabs.InstantKillTab:Divider()
 
 -- 目標玩家選擇
-refreshPlayerButton = Tabs.InstantKillTab:Button({
+Tabs.InstantKillTab:Button({
     Title = "刷新玩家列表",
     Callback = function()
         RefreshSharedPlayerList()
@@ -4889,7 +4979,7 @@ refreshPlayerButton = Tabs.InstantKillTab:Button({
 
 sharedPlayerDropdown = Tabs.InstantKillTab:Dropdown({
     Title = "選擇目標玩家",
-    Values = #sharedPlayerList > 0 and sharedPlayerList or {"暫無其他玩家"},
+    Values = sharedPlayerList,
     Value = "請選擇玩家",
     Callback = function(selected)
         if selected ~= "請選擇玩家" and selected ~= "暫無其他玩家" then
@@ -4902,11 +4992,7 @@ sharedPlayerDropdown = Tabs.InstantKillTab:Dropdown({
     end
 })
 
-targetStatusParagraph = Tabs.InstantKillTab:Paragraph({ 
-    Title = "當前狀態", 
-    Desc = "尚未選擇", 
-    Image = "target" 
-})
+targetStatusParagraph = Tabs.InstantKillTab:Paragraph({ Title = "當前狀態", Desc = "尚未選擇", Image = "target" })
 
 Tabs.InstantKillTab:Divider()
 
@@ -4977,7 +5063,7 @@ Tabs.InstantKillTab:Input({
     end
 })
 
-teleportZxButton = Tabs.InstantKillTab:Button({
+Tabs.InstantKillTab:Button({
     Title = "傳送+ZX",
     Callback = function()
         PerformTeleportAndZx()
@@ -4986,58 +5072,33 @@ teleportZxButton = Tabs.InstantKillTab:Button({
 
 Tabs.InstantKillTab:Divider()
 
--- ==================== 龍泉z秒殺全自動 UI ====================
-Tabs.InstantKillTab:Paragraph({
-    Title = "🌌 龍泉z秒殺全自動",
-    Desc = "重生 → 等" .. LongQuanZKillConfig.SPAWN_DELAY .. "秒 → 虛空 → 切欄1 → 按" .. LongQuanZKillConfig.RESET_THRESHOLD .. "次Z → 重生 → 循環",
-    Image = "zap"
-})
-
-Tabs.InstantKillTab:Divider()
-
-longquanZStatusLabel = Tabs.InstantKillTab:Paragraph({
-    Title = "狀態",
-    Desc = LongQuanZKillConfig.StatusText,
-    Image = "activity"
-})
-
-Tabs.InstantKillTab:Divider()
-
-longquanZButton = Tabs.InstantKillTab:Button({
-    Title = "龍泉z秒殺全自動 [關閉]",
+-- 龍拳z秒殺 (監聽ZRelease音效自動重置角色)
+dragonZKillButton = Tabs.InstantKillTab:Button({
+    Title = "龍拳z秒殺 [關閉]",
     Callback = function()
-        ToggleLongQuanZKill(not LongQuanZKillConfig.Enabled)
+        ToggleDragonZKill()
     end
 })
 
 Tabs.InstantKillTab:Divider()
 
-Tabs.InstantKillTab:Paragraph({
-    Title = "⚙️ 設定說明",
-    Desc = "重生後等 " .. LongQuanZKillConfig.SPAWN_DELAY .. " 秒 → 按 " .. LongQuanZKillConfig.RESET_THRESHOLD .. " 次Z → 馬上重生\n虛空鎖定 + 極速連打",
-    Image = "settings"
+-- 創造z秒殺 (虛空傳送開關)
+createZButton = Tabs.InstantKillTab:Button({
+    Title = "龍拳z秒殺 創造z秒殺 雷爪拳圖 龍刀拳圖 [關閉]",
+    Callback = function()
+        ToggleCreateZ()
+    end
 })
 
 Tabs.InstantKillTab:Divider()
 
 -- 雷爪z龍刀z全圖
-voidComboButton = Tabs.InstantKillTab:Button({
+Tabs.InstantKillTab:Button({
     Title = "雷爪z龍刀z全圖",
     Callback = function()
         PerformVoidCombo()
     end
 })
-
--- ==================== 狀態即時更新 ====================
-task.spawn(function()
-    while task.wait(0.5) do
-        pcall(function()
-            if longquanZStatusLabel then
-                longquanZStatusLabel:SetDesc(LongQuanZKillConfig.StatusText)
-            end
-        end)
-    end
-end)
 
 -- ==================== 即時更新最近目標狀態 ====================
 task.spawn(function()
