@@ -1,0 +1,562 @@
+if not game:IsLoaded() then
+    repeat task.wait() until game:IsLoaded()
+end
+task.wait(2)
+
+local success, WindUI = pcall(function()
+    return loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+end)
+
+if not success or not WindUI then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "錯誤",
+        Text = "WindUI 加載失敗",
+        Duration = 5
+    })
+    return
+end
+
+local player = game.Players.LocalPlayer
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local VIM = game:GetService("VirtualInputManager")
+
+-- ==================== 設定儲存/讀取 ====================
+local SETTINGS_FILE = "BF_Settings.json"
+local Settings = {
+    Team = "Pirates",
+    VoidEnabled = false,
+    CombatHopEnabled = true,
+    AutoCloseUI = false,
+    AutoCloseDelay = 3,
+}
+
+local function saveSettings()
+    pcall(function()
+        if writefile then
+            writefile(SETTINGS_FILE, game:GetService("HttpService"):JSONEncode(Settings))
+        end
+    end)
+end
+
+local function loadSettings()
+    local success, result = pcall(function()
+        if readfile and isfile and isfile(SETTINGS_FILE) then
+            return game:GetService("HttpService"):JSONDecode(readfile(SETTINGS_FILE))
+        end
+    end)
+    if success and result then
+        for k, v in pairs(result) do
+            Settings[k] = v
+        end
+    end
+end
+
+loadSettings()
+
+-- 🔑 換服後重新執行自己
+if queue_on_teleport then
+    queue_on_teleport([[
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/ycjh002-creator/56/refs/heads/main/12"))()
+    ]])
+end
+
+-- ==================== 全域變數 ====================
+local isVoidEnabled = Settings.VoidEnabled
+local savedPosition = nil
+local voidThread = nil
+local slot1SpamThread = nil
+local waitingForReset = false
+local noCombatCount = 0
+local maxNoCombat = 2
+local combatCheckedThisCycle = false
+local combatCheckEnabled = Settings.CombatHopEnabled
+
+-- ==================== 按鍵模擬 ====================
+local function pressKey(keyCode)
+    VIM:SendKeyEvent(true, keyCode, false, nil)
+    task.wait(0.03)
+    VIM:SendKeyEvent(false, keyCode, false, nil)
+end
+
+local function switchToSlot(slot)
+    local keyMap = { [1] = Enum.KeyCode.One, [2] = Enum.KeyCode.Two, [3] = Enum.KeyCode.Three }
+    if keyMap[slot] then pressKey(keyMap[slot]) end
+end
+
+-- ==================== 換服函數 ====================
+local ServerBtnX = 98.8
+local ServerBtnY = 2
+local JoinX = 69.3
+local JoinY = 41.4
+local ListX = 48.0
+local ListY = 50.7
+local KeepAliveX = 49.7
+local KeepAliveY = 53.1
+
+local function clickAt(percentX, percentY)
+    local sx = workspace.CurrentCamera.ViewportSize.X
+    local sy = workspace.CurrentCamera.ViewportSize.Y
+    local x = sx * (percentX / 100)
+    local y = sy * (percentY / 100)
+    VIM:SendMouseMoveEvent(x, y, game)
+    task.wait(0.1)
+    VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
+    task.wait(0.08)
+    VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
+end
+
+local function getServerScroll()
+    local sb = player.PlayerGui:FindFirstChild("ServerBrowser")
+    if sb then
+        return sb:FindFirstChild("ScrollingFrame", true)
+    end
+    return nil
+end
+
+local function jumpRandom()
+    local scroll = getServerScroll()
+    if not scroll then return false end
+    local maxY = scroll.CanvasSize.Y.Offset
+    if maxY <= 0 then return false end
+    local randomY = math.random(0, math.floor(maxY))
+    scroll.CanvasPosition = Vector2.new(0, randomY)
+    return true
+end
+
+local function serverHop()
+    if isVoidEnabled then
+        isVoidEnabled = false
+        stopSlot1Spam()
+        if voidThread then task.cancel(voidThread); voidThread = nil end
+        returnToPosition()
+    end
+    waitingForReset = false
+
+    local currentJob = game.JobId
+
+    clickAt(ServerBtnX, ServerBtnY)
+    task.wait(3)
+
+    local keepAliveThread = task.spawn(function()
+        while game.JobId == currentJob do
+            task.wait(5)
+            if game.JobId == currentJob then
+                clickAt(KeepAliveX, KeepAliveY)
+            end
+        end
+    end)
+
+    while game.JobId == currentJob do
+        jumpRandom()
+        task.wait(0.5)
+        local randomY = math.random(15, 85)
+        clickAt(ListX, randomY)
+        task.wait(0.3)
+        clickAt(JoinX, JoinY)
+        task.wait(5)
+    end
+
+    if keepAliveThread then task.cancel(keepAliveThread) end
+end
+
+-- ==================== 戰鬥狀態偵測 ====================
+local function IsPlayerInCombat()
+    local character = player.Character
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if character and (character:GetAttribute("SafeZone") or character:GetAttribute("IsInSafeZone")) then return false end
+    if playerGui and playerGui:FindFirstChild("Main") then
+        local safeZoneUI = playerGui.Main:FindFirstChild("SafeZone")
+        if safeZoneUI and safeZoneUI.Visible then return false end
+    end
+    local combatTag = character and (character:FindFirstChild("Combat") or character:FindFirstChild("combat"))
+    if combatTag and combatTag:IsA("BoolValue") and combatTag.Value == true then return true end
+    if playerGui then
+        local main = playerGui:FindFirstChild("Main")
+        if main then
+            for _, obj in ipairs(main:GetDescendants()) do
+                if obj:IsA("TextLabel") and obj.Visible and obj.TextTransparency < 0.1 then
+                    local text = obj.Text
+                    if text:find("In Combat") or text:find("at risk") then
+                        local color = obj.TextColor3
+                        if color.R > 0.7 and color.G < 0.4 and color.B < 0.4 then
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- ==================== 陣營選擇 ====================
+local selectedTeam = Settings.Team
+
+local function selectTeam(team)
+    team = team or selectedTeam
+    pcall(function() if player.Team and player.Team.Name == team then return end end)
+    pcall(function()
+        local commF = replicatedStorage:FindFirstChild("Remotes")
+        if commF then commF = commF:FindFirstChild("CommF_") end
+        if commF then commF:InvokeServer("SetTeam", team) end
+    end)
+end
+
+-- ==================== Haki ====================
+local function autoHaki()
+    pcall(function()
+        local char = player.Character
+        if not char then return end
+        if not char:FindFirstChild("HasBuso") then
+            replicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+        end
+        if not char:FindFirstChild("Ken") then
+            replicatedStorage.Remotes.CommF_:InvokeServer("KenTalk", "Buy")
+        end
+    end)
+end
+
+task.spawn(function()
+    while task.wait(0.1) do autoHaki() end
+end)
+
+-- ==================== 虛空傳送 + 自殺系統 ====================
+local function stopSlot1Spam()
+    if slot1SpamThread then task.cancel(slot1SpamThread); slot1SpamThread = nil end
+end
+
+local function suicide(targetChar)
+    local humanoid = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.Health > 0 then
+        humanoid.Health = 0
+    end
+end
+
+local function startSlot1Spam()
+    stopSlot1Spam()
+    local trackedChar = player.Character
+    if not trackedChar then return end
+
+    combatCheckedThisCycle = false
+    local hasPressedZ = false
+
+    slot1SpamThread = task.spawn(function()
+        while isVoidEnabled and player.Character == trackedChar do
+            local humanoid = trackedChar:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health <= 0 then break end
+
+            if combatCheckEnabled and not combatCheckedThisCycle then
+                if IsPlayerInCombat() then
+                    combatCheckedThisCycle = true
+                    noCombatCount = 0
+                end
+            end
+
+            -- 切換欄位1 + 按Z
+            switchToSlot(1)
+            task.wait(0.05)
+            pressKey(Enum.KeyCode.Z)
+            task.wait(0.1)
+
+            -- 按完Z後直接自殺
+            if not hasPressedZ then
+                hasPressedZ = true
+                task.wait(0.2)
+                suicide(trackedChar)
+                break
+            end
+
+            task.wait(0.05)
+        end
+
+        if combatCheckEnabled and not combatCheckedThisCycle then
+            noCombatCount = noCombatCount + 1
+            if noCombatCount >= maxNoCombat then
+                waitingForReset = true
+            end
+        end
+
+        slot1SpamThread = nil
+    end)
+end
+
+local function useSkills()
+    if not isVoidEnabled or not player.Character then return end
+    switchToSlot(1)
+    task.wait(0.05)
+    startSlot1Spam()
+end
+
+local function voidLoop()
+    while isVoidEnabled do
+        local char = player.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then root.CFrame = CFrame.new(0, 7e29, 0) end
+        end
+        task.wait()
+    end
+end
+
+local function savePosition()
+    local char = player.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then savedPosition = root.CFrame end
+    end
+end
+
+local function returnToPosition()
+    if not savedPosition then return end
+    local char = player.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then root.CFrame = savedPosition end
+    end
+end
+
+local function toggleVoid(state)
+    Settings.VoidEnabled = state
+    saveSettings()
+
+    if state then
+        stopSlot1Spam()
+        savePosition()
+        isVoidEnabled = true
+        noCombatCount = 0
+        task.delay(2, function()
+            if isVoidEnabled then
+                voidThread = task.spawn(voidLoop)
+                task.delay(2, function()
+                    if isVoidEnabled then useSkills() end
+                end)
+            end
+        end)
+    else
+        isVoidEnabled = false
+        stopSlot1Spam()
+        if voidThread then task.cancel(voidThread); voidThread = nil end
+        returnToPosition()
+    end
+end
+
+-- 初始虛空：等選陣營後開始
+if Settings.VoidEnabled then
+    task.delay(6, function() toggleVoid(true) end)
+end
+
+-- ==================== 角色重生 ====================
+local hopStatus = ""
+
+player.CharacterAdded:Connect(function()
+    if waitingForReset and not isVoidEnabled then
+        waitingForReset = false
+        hopStatus = "換服中..."
+        task.wait(0.5)
+        serverHop()
+        hopStatus = ""
+        return
+    end
+
+    if isVoidEnabled then
+        stopSlot1Spam()
+        savePosition()
+        voidThread = task.spawn(voidLoop)
+        task.delay(2, function()
+            if isVoidEnabled then useSkills() end
+        end)
+    end
+end)
+
+task.spawn(function()
+    while task.wait(5) do
+        pcall(function()
+            if not player.Team or player.Team.Name ~= selectedTeam then selectTeam(selectedTeam) end
+        end)
+    end
+end)
+
+-- ==================== WindUI ====================
+local Window = WindUI:CreateWindow({
+    Title = "陣營 + 虛空傳送",
+    Icon = "zap",
+    Author = "DYHUB",
+    Size = UDim2.fromOffset(380, 400),
+    Theme = "Dark"
+})
+
+Window:EditOpenButton({
+    Title = "按 N 開關面板",
+    Icon = "zap",
+    CornerRadius = UDim.new(0, 6),
+    StrokeThickness = 2,
+    Color = ColorSequence.new(Color3.fromRGB(30, 30, 30), Color3.fromRGB(255, 255, 255)),
+    Draggable = true
+})
+
+Window:SetToggleKey(Enum.KeyCode.N)
+
+-- ==================== 主功能分頁 ====================
+local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
+
+MainTab:Paragraph({
+    Title = "🏴‍☠️ 陣營選擇",
+    Desc = "UI開關：等2秒→虛空→等2秒→連打",
+    Image = "users"
+})
+
+MainTab:Divider()
+
+local teamStatus = MainTab:Paragraph({
+    Title = "目前陣營",
+    Desc = selectedTeam .. " (已儲存)",
+    Image = "user-check"
+})
+
+MainTab:Dropdown({
+    Title = "選擇陣營",
+    Values = {"🏴‍☠️ 海賊 (Pirates)", "⚓ 海軍 (Marines)"},
+    Value = selectedTeam == "Pirates" and "🏴‍☠️ 海賊 (Pirates)" or "⚓ 海軍 (Marines)",
+    Callback = function(selected)
+        if selected == "🏴‍☠️ 海賊 (Pirates)" then
+            selectedTeam = "Pirates"
+            Settings.Team = "Pirates"
+        elseif selected == "⚓ 海軍 (Marines)" then
+            selectedTeam = "Marines"
+            Settings.Team = "Marines"
+        end
+        saveSettings()
+        selectTeam(selectedTeam)
+        teamStatus:SetDesc(selectedTeam .. " (已儲存)")
+    end
+})
+
+MainTab:Divider()
+MainTab:Divider()
+
+MainTab:Paragraph({
+    Title = "🌌 虛空傳送",
+    Desc = "UI:等2秒→虛空→等2秒→按Z自殺 | 重生:虛空→等2秒→按Z自殺",
+    Image = "zap"
+})
+
+MainTab:Divider()
+
+MainTab:Toggle({
+    Title = "虛空傳送開關",
+    Value = isVoidEnabled,
+    Callback = function(state)
+        toggleVoid(state)
+    end
+})
+
+MainTab:Divider()
+MainTab:Divider()
+
+MainTab:Paragraph({
+    Title = "⚔️ 戰鬥偵測換服",
+    Desc = "連續2輪沒戰鬥→換服",
+    Image = "crosshair"
+})
+
+MainTab:Divider()
+
+local combatStatus = MainTab:Paragraph({
+    Title = "連續未戰鬥",
+    Desc = "0 / 2",
+    Image = "activity"
+})
+
+MainTab:Toggle({
+    Title = "自動換服開關",
+    Value = combatCheckEnabled,
+    Callback = function(state)
+        combatCheckEnabled = state
+        Settings.CombatHopEnabled = state
+        saveSettings()
+        if not state then
+            noCombatCount = 0
+            combatStatus:SetDesc("0 / 2 (已關閉)")
+        else
+            combatStatus:SetDesc(noCombatCount .. " / 2")
+        end
+    end
+})
+
+MainTab:Button({
+    Title = "🔄 手動換服",
+    Icon = "server",
+    Callback = function()
+        if isVoidEnabled then
+            waitingForReset = true
+            stopSlot1Spam()
+        else
+            serverHop()
+        end
+    end
+})
+
+-- ==================== 設定分頁 ====================
+local SettingsTab = Window:Tab({ Title = "設定", Icon = "settings" })
+
+SettingsTab:Paragraph({
+    Title = "⚙️ UI 設定",
+    Desc = "載入時自動隱藏UI（只執行一次）",
+    Image = "settings"
+})
+
+SettingsTab:Divider()
+
+local autoCloseStatus = SettingsTab:Paragraph({
+    Title = "載入時自動隱藏",
+    Desc = Settings.AutoCloseUI and "開啟 (" .. Settings.AutoCloseDelay .. "秒後隱藏)" or "關閉",
+    Image = "eye-off"
+})
+
+SettingsTab:Toggle({
+    Title = "載入時自動隱藏UI",
+    Value = Settings.AutoCloseUI,
+    Callback = function(state)
+        Settings.AutoCloseUI = state
+        saveSettings()
+        autoCloseStatus:SetDesc(state and "開啟 (" .. Settings.AutoCloseDelay .. "秒後隱藏)" or "關閉")
+    end
+})
+
+SettingsTab:Slider({
+    Title = "隱藏延遲(秒)",
+    Step = 1,
+    Value = {
+        Min = 1,
+        Max = 10,
+        Default = Settings.AutoCloseDelay
+    },
+    Callback = function(value)
+        Settings.AutoCloseDelay = value
+        saveSettings()
+        autoCloseStatus:SetDesc("開啟 (" .. value .. "秒後隱藏)")
+    end
+})
+
+-- ==================== UI 狀態更新 ====================
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            local t = noCombatCount .. " / " .. maxNoCombat
+            if not combatCheckEnabled then t = t .. " (關)" end
+            if waitingForReset then t = t .. " | 等重置" end
+            if hopStatus ~= "" then t = t .. " | " .. hopStatus end
+            combatStatus:SetDesc(t)
+        end)
+    end
+end)
+
+-- ==================== 載入時自動隱藏UI ====================
+if Settings.AutoCloseUI then
+    task.delay(Settings.AutoCloseDelay, function()
+        Window:Close()
+    end)
+end
+
+task.wait(3)
+selectTeam(selectedTeam)
