@@ -60,28 +60,19 @@ if queue_on_teleport then
     ]])
 end
 
--- ==================== 全域變數 ====================
+-- ==================== 變數宣告 ====================
 local isVoidEnabled = Settings.VoidEnabled
 local savedPosition = nil
 local voidThread = nil
 local slot1SpamThread = nil
 local waitingForReset = false
+
 local noCombatCount = 0
 local maxNoCombat = 2
 local combatCheckedThisCycle = false
 local combatCheckEnabled = Settings.CombatHopEnabled
-
--- ==================== 按鍵模擬 ====================
-local function pressKey(keyCode)
-    VIM:SendKeyEvent(true, keyCode, false, nil)
-    task.wait(0.03)
-    VIM:SendKeyEvent(false, keyCode, false, nil)
-end
-
-local function switchToSlot(slot)
-    local keyMap = { [1] = Enum.KeyCode.One, [2] = Enum.KeyCode.Two, [3] = Enum.KeyCode.Three }
-    if keyMap[slot] then pressKey(keyMap[slot]) end
-end
+local selectedTeam = Settings.Team
+local hopStatus = ""
 
 -- ==================== 換服函數 ====================
 local ServerBtnX = 98.8
@@ -190,8 +181,6 @@ local function IsPlayerInCombat()
 end
 
 -- ==================== 陣營選擇 ====================
-local selectedTeam = Settings.Team
-
 local function selectTeam(team)
     team = team or selectedTeam
     pcall(function() if player.Team and player.Team.Name == team then return end end)
@@ -220,16 +209,20 @@ task.spawn(function()
     while task.wait(0.1) do autoHaki() end
 end)
 
--- ==================== 虛空傳送 + 自殺系統 ====================
-local function stopSlot1Spam()
-    if slot1SpamThread then task.cancel(slot1SpamThread); slot1SpamThread = nil end
+-- ==================== 虛空傳送 + 戰鬥偵測 ====================
+local function pressKey(keyCode)
+    VIM:SendKeyEvent(true, keyCode, false, nil)
+    task.wait(0.03)
+    VIM:SendKeyEvent(false, keyCode, false, nil)
 end
 
-local function suicide(targetChar)
-    local humanoid = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
-    if humanoid and humanoid.Health > 0 then
-        humanoid.Health = 0
-    end
+local function switchToSlot(slot)
+    local keyMap = { [1] = Enum.KeyCode.One, [2] = Enum.KeyCode.Two, [3] = Enum.KeyCode.Three }
+    if keyMap[slot] then pressKey(keyMap[slot]) end
+end
+
+local function stopSlot1Spam()
+    if slot1SpamThread then task.cancel(slot1SpamThread); slot1SpamThread = nil end
 end
 
 local function startSlot1Spam()
@@ -238,7 +231,6 @@ local function startSlot1Spam()
     if not trackedChar then return end
 
     combatCheckedThisCycle = false
-    local hasPressedZ = false
 
     slot1SpamThread = task.spawn(function()
         while isVoidEnabled and player.Character == trackedChar do
@@ -252,20 +244,7 @@ local function startSlot1Spam()
                 end
             end
 
-            -- 切換欄位1 + 按Z
-            switchToSlot(1)
-            task.wait(0.05)
             pressKey(Enum.KeyCode.Z)
-            task.wait(0.1)
-
-            -- 按完Z後等待0.4秒再自殺
-            if not hasPressedZ then
-                hasPressedZ = true
-                task.wait(0.4)
-                suicide(trackedChar)
-                break
-            end
-
             task.wait(0.05)
         end
 
@@ -282,15 +261,18 @@ end
 
 local function useSkills()
     if not isVoidEnabled or not player.Character then return end
-    -- 先切欄位3按Z
-    switchToSlot(3)
-    task.wait(0.05)
-    pressKey(Enum.KeyCode.Z)
-    task.wait(0.05)
-    -- 再切欄位1按Z（會自動自殺）
     switchToSlot(1)
-    task.wait(0.05)
-    startSlot1Spam()
+    task.wait(0.1)
+    pressKey(Enum.KeyCode.Z)
+    task.wait(0.3)
+    -- 直接自殺
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Health = 0
+        end
+    end
 end
 
 local function voidLoop()
@@ -330,6 +312,7 @@ local function toggleVoid(state)
         savePosition()
         isVoidEnabled = true
         noCombatCount = 0
+        -- UI開關：等2秒 → 虛空傳送 → 等2秒 → 放技能
         task.delay(2, function()
             if isVoidEnabled then
                 voidThread = task.spawn(voidLoop)
@@ -351,9 +334,23 @@ if Settings.VoidEnabled then
     task.delay(6, function() toggleVoid(true) end)
 end
 
--- ==================== 角色重生 ====================
-local hopStatus = ""
+local function resetCharacter()
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Health = 0
+            if waitingForReset then
+                isVoidEnabled = false
+                stopSlot1Spam()
+                if voidThread then task.cancel(voidThread); voidThread = nil end
+                returnToPosition()
+            end
+        end
+    end
+end
 
+-- ==================== 角色重生 ====================
 player.CharacterAdded:Connect(function()
     if waitingForReset and not isVoidEnabled then
         waitingForReset = false
@@ -367,6 +364,7 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
+        -- 重生後：直接虛空傳送 → 等2秒 → 放技能
         voidThread = task.spawn(voidLoop)
         task.delay(2, function()
             if isVoidEnabled then useSkills() end
@@ -407,7 +405,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "UI開關：等2秒→虛空→等2秒→放技能自殺",
+    Desc = "UI開關：等2秒→虛空→等2秒→切欄1放Z→自殺",
     Image = "users"
 })
 
@@ -442,7 +440,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "流程：切欄3按Z → 切欄1按Z → 等0.4秒自殺",
+    Desc = "UI:等2秒→虛空→等2秒→切欄1放Z→自殺 | 重生:虛空→等2秒→放Z→自殺",
     Image = "zap"
 })
 
@@ -544,7 +542,6 @@ SettingsTab:Slider({
     end
 })
 
--- ==================== UI 狀態更新 ====================
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
@@ -561,8 +558,8 @@ end)
 if Settings.AutoCloseUI then
     task.delay(Settings.AutoCloseDelay, function()
         Window:Close()
-    end
-end)
+    end)
+end
 
 task.wait(3)
 selectTeam(selectedTeam)
