@@ -19,6 +19,7 @@ end
 local player = game.Players.LocalPlayer
 local replicatedStorage = game:GetService("ReplicatedStorage")
 local VIM = game:GetService("VirtualInputManager")
+local UIS = game:GetService("UserInputService")
 
 -- ==================== 設定儲存/讀取 ====================
 local SETTINGS_FILE = "BF_Settings.json"
@@ -56,11 +57,38 @@ loadSettings()
 -- 🔑 換服後重新執行自己
 if queue_on_teleport then
     queue_on_teleport([[
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/ycjh002-creator/56/refs/heads/main/12"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/ycjh002-creator/56/refs/heads/main/566"))()
     ]])
 end
 
--- ==================== 換服函數 ====================
+-- ==================== 變數宣告 ====================
+local isVoidEnabled = Settings.VoidEnabled
+local selectedTeam = Settings.Team
+local savedPosition = nil
+local voidThread = nil
+local slot1SpamThread = nil
+local waitingForReset = false
+local noCombatCount = 0
+local maxNoCombat = 2
+local combatCheckedThisCycle = false
+local combatCheckEnabled = Settings.CombatHopEnabled
+local lastResetTime = 0
+local RESET_COOLDOWN = 3
+local hopStatus = ""
+
+-- ==================== 按鍵輔助函數 ====================
+local function pressKey(keyCode)
+    VIM:SendKeyEvent(true, keyCode, false, nil)
+    task.wait(0.03)
+    VIM:SendKeyEvent(false, keyCode, false, nil)
+end
+
+local function switchToSlot(slot)
+    local keyMap = { [1] = Enum.KeyCode.One, [2] = Enum.KeyCode.Two, [3] = Enum.KeyCode.Three }
+    if keyMap[slot] then pressKey(keyMap[slot]) end
+end
+
+-- ==================== 滑鼠點擊函數 ====================
 local ServerBtnX = 98.8
 local ServerBtnY = 2
 local JoinX = 69.3
@@ -100,6 +128,7 @@ local function jumpRandom()
     return true
 end
 
+-- ==================== 換服函數 ====================
 local function serverHop()
     if isVoidEnabled then
         isVoidEnabled = false
@@ -167,8 +196,6 @@ local function IsPlayerInCombat()
 end
 
 -- ==================== 陣營選擇 ====================
-local selectedTeam = Settings.Team
-
 local function selectTeam(team)
     team = team or selectedTeam
     pcall(function() if player.Team and player.Team.Name == team then return end end)
@@ -197,30 +224,7 @@ task.spawn(function()
     while task.wait(0.1) do autoHaki() end
 end)
 
--- ==================== 虛空傳送 + 戰鬥偵測 ====================
-local isVoidEnabled = Settings.VoidEnabled
-local savedPosition = nil
-local voidThread = nil
-local slot1SpamThread = nil
-local trackedSounds = {}
-local waitingForReset = false
-
-local noCombatCount = 0
-local maxNoCombat = 2
-local combatCheckedThisCycle = false
-local combatCheckEnabled = Settings.CombatHopEnabled
-
-local function pressKey(keyCode)
-    VIM:SendKeyEvent(true, keyCode, false, nil)
-    task.wait(0.03)
-    VIM:SendKeyEvent(false, keyCode, false, nil)
-end
-
-local function switchToSlot(slot)
-    local keyMap = { [1] = Enum.KeyCode.One, [2] = Enum.KeyCode.Two, [3] = Enum.KeyCode.Three }
-    if keyMap[slot] then pressKey(keyMap[slot]) end
-end
-
+-- ==================== 虛空傳送相關 ====================
 local function stopSlot1Spam()
     if slot1SpamThread then task.cancel(slot1SpamThread); slot1SpamThread = nil end
 end
@@ -266,7 +270,7 @@ local function useSkills()
     pressKey(Enum.KeyCode.Z)
     task.wait(0.05)
     switchToSlot(1)
-    -- 一直按Z
+    task.wait(0.05)
     startSlot1Spam()
 end
 
@@ -298,6 +302,50 @@ local function returnToPosition()
     end
 end
 
+-- ==================== 切欄1+按Z後0.5秒重生 ====================
+local function doReset()
+    local currentTime = os.clock()
+    if currentTime - lastResetTime < RESET_COOLDOWN then return end
+    lastResetTime = currentTime
+
+    -- 切換到欄位1
+    switchToSlot(1)
+    task.wait(0.05)
+
+    -- 按Z
+    pressKey(Enum.KeyCode.Z)
+    task.wait(0.05)
+
+    -- 等0.5秒後重生
+    task.wait(0.5)
+
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.Health = 0
+            if waitingForReset then
+                isVoidEnabled = false
+                stopSlot1Spam()
+                if voidThread then
+                    task.cancel(voidThread)
+                    voidThread = nil
+                end
+                returnToPosition()
+            end
+        end
+    end
+end
+
+-- 監聽Z鍵觸發重生
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Z and isVoidEnabled then
+        task.spawn(doReset)
+    end
+end)
+
+-- ==================== 虛空開關 ====================
 local function toggleVoid(state)
     Settings.VoidEnabled = state
     saveSettings()
@@ -307,7 +355,6 @@ local function toggleVoid(state)
         savePosition()
         isVoidEnabled = true
         noCombatCount = 0
-        -- UI開關：等2秒 → 虛空傳送 → 等2秒 → 放技能
         task.delay(2, function()
             if isVoidEnabled then
                 voidThread = task.spawn(voidLoop)
@@ -324,55 +371,12 @@ local function toggleVoid(state)
     end
 end
 
--- 初始虛空：等選陣營後開始
+-- 初始虛空
 if Settings.VoidEnabled then
     task.delay(6, function() toggleVoid(true) end)
 end
 
-local function resetCharacter()
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChild("Humanoid")
-        if humanoid then
-            humanoid.Health = 0
-            if waitingForReset then
-                isVoidEnabled = false
-                stopSlot1Spam()
-                if voidThread then task.cancel(voidThread); voidThread = nil end
-                returnToPosition()
-            end
-        end
-    end
-end
-
-task.spawn(function()
-    while task.wait(0.1) do
-        pcall(function()
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj.Name == "ZRelease" and obj:IsA("Sound") and obj.IsPlaying and not trackedSounds[obj] then
-                    trackedSounds[obj] = true
-                    resetCharacter()
-                end
-            end
-            local char = player.Character
-            if char then
-                for _, obj in ipairs(char:GetDescendants()) do
-                    if obj.Name == "ZRelease" and obj:IsA("Sound") and obj.IsPlaying and not trackedSounds[obj] then
-                        trackedSounds[obj] = true
-                        resetCharacter()
-                    end
-                end
-            end
-            for soundObj in pairs(trackedSounds) do
-                if not soundObj.Parent or not soundObj.IsPlaying then trackedSounds[soundObj] = nil end
-            end
-        end)
-    end
-end)
-
--- ==================== 角色重生 ====================
-local hopStatus = ""
-
+-- ==================== 角色重生事件 ====================
 player.CharacterAdded:Connect(function()
     if waitingForReset and not isVoidEnabled then
         waitingForReset = false
@@ -386,7 +390,6 @@ player.CharacterAdded:Connect(function()
     if isVoidEnabled then
         stopSlot1Spam()
         savePosition()
-        -- 重生後：直接虛空傳送 → 等2秒 → 放技能
         voidThread = task.spawn(voidLoop)
         task.delay(2, function()
             if isVoidEnabled then useSkills() end
@@ -394,6 +397,7 @@ player.CharacterAdded:Connect(function()
     end
 end)
 
+-- ==================== 定時檢查陣營 ====================
 task.spawn(function()
     while task.wait(5) do
         pcall(function()
@@ -427,7 +431,7 @@ local MainTab = Window:Tab({ Title = "主功能", Icon = "zap" })
 
 MainTab:Paragraph({
     Title = "🏴‍☠️ 陣營選擇",
-    Desc = "UI開關：等2秒→虛空→等2秒→切欄3放Z→切欄1一直按Z",
+    Desc = "UI開關：等2秒→虛空→等2秒→連打",
     Image = "users"
 })
 
@@ -462,7 +466,7 @@ MainTab:Divider()
 
 MainTab:Paragraph({
     Title = "🌌 虛空傳送",
-    Desc = "UI:等2秒→虛空→等2秒→切欄3放Z→切欄1一直按Z | 重生:虛空→等2秒→同上",
+    Desc = "UI:等2秒→虛空→等2秒→連打 | 重生:虛空→等2秒→連打",
     Image = "zap"
 })
 
@@ -564,6 +568,7 @@ SettingsTab:Slider({
     end
 })
 
+-- ==================== 狀態更新 ====================
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
@@ -581,7 +586,7 @@ if Settings.AutoCloseUI then
     task.delay(Settings.AutoCloseDelay, function()
         Window:Close()
     end
-end)
+end
 
 task.wait(3)
 selectTeam(selectedTeam)
