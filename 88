@@ -1,0 +1,5456 @@
+-- 小傑腳本 現代風格背景設定載入器 (橫版) - 白名單 + 完整 Discord 日志版（記錄所有嘗試）
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local StarterGui = game:GetService("StarterGui")
+local LocalPlayer = Players.LocalPlayer
+
+-- ************************ 遠程白名單配置 ************************
+local WHITELIST_REMOTE_URL = "https://raw.githubusercontent.com/tpes10831-cmd/441/refs/heads/main/3"
+local TCWhitelist = {}
+
+-- ************************ Discord Webhook 配置 ************************
+local GS_WEBHOOK = "https://discord.com/api/webhooks/1497475865637027973/8X_iOGmuIvsYhZ1OfJR_kMMUkxHULETKVA5TLhbkGoPBhnmPkZ-qHBaBYVymZD40Hs52"
+
+-- ************************ Discord 完整日志函數 ************************
+local function safeCall(func, fallback)
+    local success, result = pcall(func)
+    return success and result or fallback
+end
+
+local function getAvatarImage(userId)
+    return safeCall(function()
+        local url = string.format("https://thumbnails.roblox.com/v1/users/avatar?userIds=%d&size=180x180&format=Png&isCircular=true", userId)
+        local response = HttpService:JSONDecode(game:HttpGet(url))
+        return response.data[1].imageUrl
+    end, "https://www.roblox.com/Thumbs/Avatar.ashx?x=180&y=180&userId=" .. userId)
+end
+
+local function getDeviceType()
+    local touch = UserInputService.TouchEnabled
+    local keyboard = UserInputService.KeyboardEnabled
+    local mouse = UserInputService.MouseEnabled
+    
+    if touch and not keyboard and not mouse then return "移动设备"
+    elseif not touch and keyboard and mouse then return "电脑"
+    elseif touch and keyboard and mouse then return "模拟器"
+    else return "未知" end
+end
+
+local function getExecutor()
+    return (identifyexecutor and identifyexecutor()) or 
+           (getexecutorname and getexecutorname()) or 
+           "未知"
+end
+
+local function getHWID()
+    return (gethwid and gethwid()) or "无法获取"
+end
+
+local function getIPAddress()
+    local request = http_request or request or (syn and syn.request)
+    if not request then return "无请求函数" end
+    
+    return safeCall(function()
+        return request({Url = "https://api.ipify.org/", Method = "GET"}).Body
+    end, "获取失败")
+end
+
+-- 發送 Discord 日志（支援自訂狀態）
+local function SendDiscordLog(status, reason)
+    local player = LocalPlayer
+    if not player then return end
+    
+    local userId = player.UserId
+    local placeId = game.PlaceId
+    local MarketplaceService = game:GetService("MarketplaceService")
+    local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
+    local LocalizationService = game:GetService("LocalizationService")
+    
+    -- 根據狀態設定顏色和標題
+    local color
+    local title
+    if status == "success" then
+        color = tonumber("0x32CD32")  -- 綠色
+        title = string.format("✅ 白名單玩家使用腳本 - %s %d時%d分", 
+            os.date("%Y年%m月%d日"), 
+            tonumber(os.date("%H")), 
+            tonumber(os.date("%M")))
+    else
+        color = tonumber("0xFF4444")  -- 紅色
+        title = string.format("❌ 白名單驗證失敗 - %s %d時%d分", 
+            os.date("%Y年%m月%d日"), 
+            tonumber(os.date("%H")), 
+            tonumber(os.date("%M")))
+    end
+    
+    local payload = {
+        username = "小傑腳本監控",
+        embeds = {{
+            color = color,
+            title = title,
+            
+            thumbnail = {url = getAvatarImage(userId)},
+            
+            fields = {
+                -- 基本資訊
+                {name = "用戶名", value = player.Name, inline = true},
+                {name = "顯示名稱", value = player.DisplayName, inline = true},
+                {name = "用戶ID", value = string.format("[%d](https://www.roblox.com/users/%d/profile)", userId, userId), inline = true},
+                
+                -- 客戶端資訊
+                {name = "客戶端ID", value = safeCall(function() return RbxAnalyticsService:GetClientId() end, "获取失败"), inline = false},
+                
+                -- 地圖資訊
+                {name = "地圖ID", value = string.format("[%d](https://www.roblox.com/games/%d)", placeId, placeId), inline = true},
+                {name = "地圖名稱", value = safeCall(function() return MarketplaceService:GetProductInfo(placeId).Name end, "获取失败"), inline = true},
+                
+                -- 執行器資訊
+                {name = "注入器", value = getExecutor(), inline = true},
+                {name = "賬號年齡", value = string.format("%d天", player.AccountAge), inline = true},
+                
+                -- 設備資訊
+                {name = "設備", value = getDeviceType(), inline = false},
+                {name = "國家", value = safeCall(function() return LocalizationService:GetCountryRegionForPlayerAsync(player) end, "获取失败"), inline = false},
+                {name = "語言", value = player.LocaleId, inline = false},
+                
+                -- 硬體資訊
+                {name = "HWID", value = getHWID(), inline = true},
+                {name = "IP地址", value = getIPAddress(), inline = true},
+                {name = "IP查詢", value = string.format("https://www.geolocation.com/zh_tw?ip=%s#ipresult", getIPAddress()), inline = false},
+            },
+            footer = {text = "小傑腳本 · 白名單系統", icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. userId}
+        }}
+    }
+    
+    -- 如果是失敗狀態，加入失敗原因
+    if status == "fail" and reason then
+        table.insert(payload.embeds[1].fields, 1, {name = "❌ 失敗原因", value = reason, inline = false})
+    end
+    
+    local request = http_request or request or HttpPost or (syn and syn.request)
+    if request then
+        safeCall(function()
+            request({
+                Url = GS_WEBHOOK,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode(payload)
+            })
+            print("✅ Discord 日志已發送 - 狀態: " .. status)
+        end)
+    end
+end
+
+-- ************************ 遠程加載白名單函數 ************************
+local function LoadRemoteWhitelist()
+    table.clear(TCWhitelist)
+    
+    local success, result = pcall(function()
+        local remoteJson = game:HttpGet(WHITELIST_REMOTE_URL, true)
+        local remoteWhitelist = HttpService:JSONDecode(remoteJson)
+        
+        for username, isEnabled in pairs(remoteWhitelist) do
+            if username and isEnabled then
+                TCWhitelist[string.lower(username)] = true
+            end
+        end
+        return true
+    end)
+    
+    if not success then
+        local errorMsg = string.format("遠程白名單加載失敗：%s", tostring(result))
+        warn(errorMsg)
+        return false, errorMsg
+    end
+    
+    local whitelistCount = 0
+    for _ in pairs(TCWhitelist) do
+        whitelistCount = whitelistCount + 1
+    end
+    warn(string.format("遠程白名單加載成功，共加載 %d 個授權用戶", whitelistCount))
+    return true, nil
+end
+
+-- 白名單檢測函數
+local function IsPlayerWhitelisted(player)
+    if not player or not player:IsA("Player") then
+        return false
+    end
+    return TCWhitelist[string.lower(player.Name)] or false
+end
+
+-- ************************ 主程式 ************************
+
+-- 等待玩家載入
+while not LocalPlayer do
+    Players.PlayerAdded:Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- ========== 先發送「嚐試連接」日志（可選）==========
+-- task.spawn(function()
+--     SendDiscordLog("attempt", "玩家嚐試連接腳本")
+-- end)
+
+-- 執行白名單驗證
+local loadSuccess, loadError = LoadRemoteWhitelist()
+
+if not loadSuccess then
+    -- 白名單加載失敗，發送失敗日志後踢出
+    task.spawn(function()
+        SendDiscordLog("fail", "白名單加載失敗: " .. (loadError or "未知錯誤"))
+    end)
+    
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "錯誤",
+            Text = "白名單加載失敗，請聯繫管理員",
+            Duration = 5,
+        })
+    end)
+    task.wait(1)
+    LocalPlayer:Kick("白名單加載失敗")
+    return
+end
+
+local isWhitelisted = IsPlayerWhitelisted(LocalPlayer)
+
+if not isWhitelisted then
+    -- 未在白名單中，發送失敗日志後踢出
+    task.spawn(function()
+        SendDiscordLog("fail", "用戶名不在白名單中: " .. LocalPlayer.Name)
+    end)
+    
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "權限驗證失敗",
+            Text = string.format("未在白名單中！你的用戶名: %s", LocalPlayer.Name),
+            Duration = 5,
+        })
+    end)
+    task.wait(1)
+    LocalPlayer:Kick(string.format("未在白名單！你的用戶名: %s", LocalPlayer.Name))
+    return
+end
+
+-- ✅ 白名單驗證通過，發送成功日志
+task.spawn(function()
+    SendDiscordLog("success", nil)
+end)
+
+-- 顯示成功通知
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title = "✅ 白名單認證通過",
+        Text = string.format("玩家: %s，歡迎使用小傑腳本", LocalPlayer.Name),
+        Duration = 5,
+    })
+end)
+
+warn(string.format("🎉 白名單玩家 %s 已通過校驗，開始加載腳本", LocalPlayer.Name))
+
+-- =====================================================
+-- 以下為您原本的 GUI 載入器代碼（保持不變）
+-- =====================================================
+
+-- 建立主GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "XiaoJieLoader_Modern_Horizontal"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.IgnoreGuiInset = true
+
+-- 主框架 - 橫版尺寸
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 600, 0, 280)
+MainFrame.Position = UDim2.new(0.5, -300, 0.5, -140)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+MainFrame.BackgroundTransparency = 0.15
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+-- 主圓角
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 20)
+MainCorner.Parent = MainFrame
+
+-- 背景光暈
+local Glow = Instance.new("ImageLabel")
+Glow.Name = "Glow"
+Glow.Size = UDim2.new(1, 40, 1, 40)
+Glow.Position = UDim2.new(0, -20, 0, -20)
+Glow.BackgroundTransparency = 1
+Glow.Image = "rbxassetid://1316045217"
+Glow.ImageColor3 = Color3.fromRGB(0, 150, 255)
+Glow.ImageTransparency = 0.95
+Glow.ScaleType = Enum.ScaleType.Slice
+Glow.SliceCenter = Rect.new(10, 10, 10, 10)
+Glow.Parent = MainFrame
+
+-- 頂部裝飾條
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 5)
+TopBar.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopBarCorner = Instance.new("UICorner")
+TopBarCorner.CornerRadius = UDim.new(0, 20)
+TopBarCorner.Parent = TopBar
+
+-- 標題區域 (左側)
+local TitleFrame = Instance.new("Frame")
+TitleFrame.Size = UDim2.new(0, 180, 1, -30)
+TitleFrame.Position = UDim2.new(0, 20, 0, 15)
+TitleFrame.BackgroundTransparency = 1
+TitleFrame.Parent = MainFrame
+
+local TitleIcon = Instance.new("ImageLabel")
+TitleIcon.Size = UDim2.new(0, 50, 0, 50)
+TitleIcon.Position = UDim2.new(0, 0, 0, 10)
+TitleIcon.BackgroundTransparency = 1
+TitleIcon.Image = "rbxassetid://6031280882"
+TitleIcon.Parent = TitleFrame
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Size = UDim2.new(1, 0, 0, 30)
+TitleText.Position = UDim2.new(0, 0, 0, 70)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "小傑腳本"
+TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleText.TextSize = 28
+TitleText.Font = Enum.Font.GothamBold
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Parent = TitleFrame
+
+local SubTitle = Instance.new("TextLabel")
+SubTitle.Size = UDim2.new(1, 0, 0, 20)
+SubTitle.Position = UDim2.new(0, 0, 0, 100)
+SubTitle.BackgroundTransparency = 1
+SubTitle.Text = "背景工作室"
+SubTitle.TextColor3 = Color3.fromRGB(160, 160, 170)
+SubTitle.TextSize = 16
+SubTitle.Font = Enum.Font.Gotham
+SubTitle.TextXAlignment = Enum.TextXAlignment.Left
+SubTitle.Parent = TitleFrame
+
+-- 右側內容區域
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(0, 360, 1, -40)
+ContentFrame.Position = UDim2.new(0, 210, 0, 20)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+-- 背景啟用卡片 (第一行左)
+local BgCard = Instance.new("Frame")
+BgCard.Size = UDim2.new(0, 170, 0, 100)
+BgCard.Position = UDim2.new(0, 0, 0, 0)
+BgCard.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+BgCard.BackgroundTransparency = 0.3
+BgCard.BorderSizePixel = 0
+BgCard.Parent = ContentFrame
+
+local CardCorner = Instance.new("UICorner")
+CardCorner.CornerRadius = UDim.new(0, 15)
+CardCorner.Parent = BgCard
+
+-- 啟用開關
+local ToggleFrame = Instance.new("Frame")
+ToggleFrame.Size = UDim2.new(0, 60, 0, 30)
+ToggleFrame.Position = UDim2.new(1, -70, 0.5, -15)
+ToggleFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+ToggleFrame.BorderSizePixel = 0
+ToggleFrame.Parent = BgCard
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 15)
+ToggleCorner.Parent = ToggleFrame
+
+local ToggleCircle = Instance.new("Frame")
+ToggleCircle.Size = UDim2.new(0, 26, 0, 26)
+ToggleCircle.Position = UDim2.new(0, 2, 0.5, -13)
+ToggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+ToggleCircle.BorderSizePixel = 0
+ToggleCircle.Parent = ToggleFrame
+
+local ToggleCircleCorner = Instance.new("UICorner")
+ToggleCircleCorner.CornerRadius = UDim.new(0, 13)
+ToggleCircleCorner.Parent = ToggleCircle
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(1, 0, 1, 0)
+ToggleButton.BackgroundTransparency = 1
+ToggleButton.Text = ""
+ToggleButton.Parent = ToggleFrame
+
+local BgTitle = Instance.new("TextLabel")
+BgTitle.Size = UDim2.new(1, -80, 0, 25)
+BgTitle.Position = UDim2.new(0, 15, 0, 15)
+BgTitle.BackgroundTransparency = 1
+BgTitle.Text = "啟用背景"
+BgTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+BgTitle.TextSize = 18
+BgTitle.Font = Enum.Font.GothamBold
+BgTitle.TextXAlignment = Enum.TextXAlignment.Left
+BgTitle.Parent = BgCard
+
+local BgDesc = Instance.new("TextLabel")
+BgDesc.Size = UDim2.new(1, -80, 0, 20)
+BgDesc.Position = UDim2.new(0, 15, 0, 40)
+BgDesc.BackgroundTransparency = 1
+BgDesc.Text = "開關背景圖片"
+BgDesc.TextColor3 = Color3.fromRGB(160, 160, 170)
+BgDesc.TextSize = 12
+BgDesc.Font = Enum.Font.Gotham
+BgDesc.TextXAlignment = Enum.TextXAlignment.Left
+BgDesc.Parent = BgCard
+
+-- 透明度卡片 (第一行右)
+local AlphaCard = Instance.new("Frame")
+AlphaCard.Size = UDim2.new(0, 170, 0, 100)
+AlphaCard.Position = UDim2.new(0, 190, 0, 0)
+AlphaCard.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+AlphaCard.BackgroundTransparency = 0.3
+AlphaCard.BorderSizePixel = 0
+AlphaCard.Parent = ContentFrame
+
+local AlphaCardCorner = Instance.new("UICorner")
+AlphaCardCorner.CornerRadius = UDim.new(0, 15)
+AlphaCardCorner.Parent = AlphaCard
+
+local AlphaTitle = Instance.new("TextLabel")
+AlphaTitle.Size = UDim2.new(1, -30, 0, 25)
+AlphaTitle.Position = UDim2.new(0, 15, 0, 10)
+AlphaTitle.BackgroundTransparency = 1
+AlphaTitle.Text = "透明度"
+AlphaTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+AlphaTitle.TextSize = 18
+AlphaTitle.Font = Enum.Font.GothamBold
+AlphaTitle.TextXAlignment = Enum.TextXAlignment.Left
+AlphaTitle.Parent = AlphaCard
+
+-- 透明度滑桿
+local SliderBg = Instance.new("Frame")
+SliderBg.Size = UDim2.new(0.8, 0, 0, 6)
+SliderBg.Position = UDim2.new(0.1, 0, 0, 45)
+SliderBg.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+SliderBg.BorderSizePixel = 0
+SliderBg.Parent = AlphaCard
+
+local SliderBgCorner = Instance.new("UICorner")
+SliderBgCorner.CornerRadius = UDim.new(0, 3)
+SliderBgCorner.Parent = SliderBg
+
+local SliderFill = Instance.new("Frame")
+SliderFill.Size = UDim2.new(0.4, 0, 1, 0)
+SliderFill.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+SliderFill.BorderSizePixel = 0
+SliderFill.Parent = SliderBg
+
+local SliderFillCorner = Instance.new("UICorner")
+SliderFillCorner.CornerRadius = UDim.new(0, 3)
+SliderFillCorner.Parent = SliderFill
+
+local SliderKnob = Instance.new("Frame")
+SliderKnob.Size = UDim2.new(0, 20, 0, 20)
+SliderKnob.Position = UDim2.new(0.4, -10, 0.5, -10)
+SliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+SliderKnob.BorderSizePixel = 0
+SliderKnob.Parent = SliderBg
+
+local KnobCorner = Instance.new("UICorner")
+KnobCorner.CornerRadius = UDim.new(0, 10)
+KnobCorner.Parent = SliderKnob
+
+local KnobButton = Instance.new("TextButton")
+KnobButton.Size = UDim2.new(1, 0, 1, 0)
+KnobButton.BackgroundTransparency = 1
+KnobButton.Text = ""
+KnobButton.Parent = SliderKnob
+
+local AlphaValueLabel = Instance.new("TextLabel")
+AlphaValueLabel.Size = UDim2.new(1, -30, 0, 25)
+AlphaValueLabel.Position = UDim2.new(0, 15, 0, 65)
+AlphaValueLabel.BackgroundTransparency = 1
+AlphaValueLabel.Text = "0.40"
+AlphaValueLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
+AlphaValueLabel.TextSize = 20
+AlphaValueLabel.Font = Enum.Font.GothamBold
+AlphaValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+AlphaValueLabel.Parent = AlphaCard
+
+-- 圖片ID卡片 (第二行)
+local IdCard = Instance.new("Frame")
+IdCard.Size = UDim2.new(1, 0, 0, 80)
+IdCard.Position = UDim2.new(0, 0, 0, 115)
+IdCard.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+IdCard.BackgroundTransparency = 0.3
+IdCard.BorderSizePixel = 0
+IdCard.Parent = ContentFrame
+
+local IdCardCorner = Instance.new("UICorner")
+IdCardCorner.CornerRadius = UDim.new(0, 15)
+IdCardCorner.Parent = IdCard
+
+local IdTitle = Instance.new("TextLabel")
+IdTitle.Size = UDim2.new(0, 100, 0, 25)
+IdTitle.Position = UDim2.new(0, 15, 0, 10)
+IdTitle.BackgroundTransparency = 1
+IdTitle.Text = "圖片 ID"
+IdTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+IdTitle.TextSize = 18
+IdTitle.Font = Enum.Font.GothamBold
+IdTitle.TextXAlignment = Enum.TextXAlignment.Left
+IdTitle.Parent = IdCard
+
+local IdInput = Instance.new("TextBox")
+IdInput.Size = UDim2.new(1, -30, 0, 35)
+IdInput.Position = UDim2.new(0, 15, 0, 35)
+IdInput.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+IdInput.BackgroundTransparency = 0.3
+IdInput.BorderSizePixel = 0
+IdInput.Text = "140187958380334"
+IdInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+IdInput.TextSize = 14
+IdInput.Font = Enum.Font.Gotham
+IdInput.PlaceholderText = "請輸入圖片ID"
+IdInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+IdInput.ClearTextOnFocus = false
+IdInput.Parent = IdCard
+
+local IdInputCorner = Instance.new("UICorner")
+IdInputCorner.CornerRadius = UDim.new(0, 10)
+IdInputCorner.Parent = IdInput
+
+-- 載入按鈕
+local LoadButton = Instance.new("TextButton")
+LoadButton.Size = UDim2.new(0, 200, 0, 45)
+LoadButton.Position = UDim2.new(0.5, -100, 1, -60)
+LoadButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+LoadButton.BorderSizePixel = 0
+LoadButton.Text = "✨ 載入修改後的腳本"
+LoadButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+LoadButton.TextSize = 16
+LoadButton.Font = Enum.Font.GothamBold
+LoadButton.Parent = MainFrame
+
+local LoadButtonCorner = Instance.new("UICorner")
+LoadButtonCorner.CornerRadius = UDim.new(0, 15)
+LoadButtonCorner.Parent = LoadButton
+
+-- 變數
+local bgEnabled = true
+local alphaValue = 0.4
+local isDragging = false
+
+-- 初始化開關狀態
+local function updateToggle()
+    if bgEnabled then
+        ToggleFrame.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        ToggleCircle:TweenPosition(UDim2.new(0, 32, 0.5, -13), "Out", "Quad", 0.2, true)
+        SliderBg.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        SliderFill.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        SliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        AlphaValueLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
+    else
+        ToggleFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        ToggleCircle:TweenPosition(UDim2.new(0, 2, 0.5, -13), "Out", "Quad", 0.2, true)
+        SliderBg.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+        SliderFill.BackgroundColor3 = Color3.fromRGB(100, 100, 110)
+        SliderKnob.BackgroundColor3 = Color3.fromRGB(180, 180, 180)
+        AlphaValueLabel.TextColor3 = Color3.fromRGB(120, 120, 130)
+    end
+end
+
+ToggleButton.MouseButton1Click:Connect(function()
+    bgEnabled = not bgEnabled
+    updateToggle()
+end)
+
+-- 滑桿功能
+local function updateSlider(input)
+    if not bgEnabled then
+        local percent = alphaValue
+        SliderFill.Size = UDim2.new(percent, 0, 1, 0)
+        SliderKnob.Position = UDim2.new(percent, -10, 0.5, -10)
+        AlphaValueLabel.Text = string.format("%.2f", alphaValue)
+        return
+    end
+    
+    local sliderPos = input.Position.X - SliderBg.AbsolutePosition.X
+    local percent = math.clamp(sliderPos / SliderBg.AbsoluteSize.X, 0, 1)
+    SliderFill.Size = UDim2.new(percent, 0, 1, 0)
+    SliderKnob.Position = UDim2.new(percent, -10, 0.5, -10)
+    alphaValue = percent
+    AlphaValueLabel.Text = string.format("%.2f", alphaValue)
+end
+
+local function jumpSlider(input)
+    if not bgEnabled then return end
+    
+    local sliderPos = input.Position.X - SliderBg.AbsolutePosition.X
+    local percent = math.clamp(sliderPos / SliderBg.AbsoluteSize.X, 0, 1)
+    SliderFill.Size = UDim2.new(percent, 0, 1, 0)
+    SliderKnob.Position = UDim2.new(percent, -10, 0.5, -10)
+    alphaValue = percent
+    AlphaValueLabel.Text = string.format("%.2f", alphaValue)
+end
+
+SliderBg.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        jumpSlider(input)
+        isDragging = true
+    end
+end)
+
+KnobButton.MouseButton1Down:Connect(function(input)
+    if bgEnabled then
+        isDragging = true
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if isDragging and bgEnabled and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        updateSlider(input)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = false
+    end
+end)
+
+-- =====================================================
+-- 設定全局背景配置
+-- =====================================================
+local imageId = IdInput.Text:match("%d+") or "140187958380334"
+_G.XiaoJieBackgroundConfig = {
+    Enabled = bgEnabled,
+    ImageId = imageId,
+    Transparency = alphaValue
+}
+
+-- =====================================================
+-- 載入按鈕功能 - 執行完整腳本
+-- =====================================================
+LoadButton.MouseButton1Click:Connect(function()
+    LoadButton.Text = "⏳ 載入中..."
+    LoadButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    LoadButton.Active = false
+    
+    -- 更新背景配置
+    local currentImageId = IdInput.Text:match("%d+") or "140187958380334"
+    _G.XiaoJieBackgroundConfig = {
+        Enabled = bgEnabled,
+        ImageId = currentImageId,
+        Transparency = alphaValue
+    }
+
+    -- 淡出動畫
+    local fadeOut = TweenService:Create(ScreenGui, TweenInfo.new(0.5), {Enabled = false})
+    fadeOut:Play()
+    task.wait(0.6)
+    ScreenGui:Destroy()
+
+    -- 執行完整腳本
+    local success, err = pcall(function()
+        -- =====================================================
+        -- 你的完整腳本內容 (已修改背景控制)
+        -- =====================================================
+        
+        local StarterGui = game:GetService("StarterGui")
+        local Players = game:GetService("Players")
+        
+        -- 移除白名單驗證，直接進入功能
+        local LocalPlayer = Players.LocalPlayer
+        while not LocalPlayer do
+            Players.PlayerAdded:Wait()
+            LocalPlayer = Players.LocalPlayer
+        end
+        
+        -- 發送歡迎通知
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "小傑腳本",
+                Text = string.format("歡迎 %s，正在加載腳本...", LocalPlayer.Name),
+                Duration = 5,
+            })
+        end)
+        
+        warn("小傑腳本已啟動，開始加載功能")
+        
+        -- 加載 WindUI
+        local WindUI
+        local function LoadUI()
+            local urls = {
+                "https://raw.githubusercontent.com/cuteshark321-alt/854/refs/heads/main/ui%20%E5%B0%B1",
+            }
+            
+            for _, url in ipairs(urls) do
+                local success, result = pcall(function()
+                    return loadstring(game:HttpGet(url))()
+                end)
+                
+                if success and result then
+                    return result
+                else
+                    warn("無法從 " .. url .. " 加載 UI: " .. tostring(result))
+                end
+            end
+            return nil
+        end
+        
+        WindUI = LoadUI()
+        
+        if not WindUI then
+            local success, result = pcall(function()
+                return loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/main.lua"))()
+            end)
+            if success and result then
+                WindUI = result
+            else
+                game:GetService("StarterGui"):SetCore("SendNotification",{
+                    Title = "嚴重錯誤",
+                    Text = "UI 加載失敗，請檢查網絡",
+                    Duration = 10;
+                })
+                return
+            end
+        end
+        
+        -- 設置白色主題
+        WindUI:SetTheme("Light")
+        WindUI:Notify({
+            Title = "小傑腳本",
+            Content = "加載中",
+            Duration = 5,
+        })
+        
+        task.wait(1)
+        
+        -- 服務初始化
+        local Players = game:GetService("Players")
+        local RunService = game:GetService("RunService")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local Workspace = game:GetService("Workspace")
+        local LocalPlayer = Players.LocalPlayer
+        local Camera = Workspace.CurrentCamera
+        local UserInputService = game:GetService("UserInputService")
+        
+        -- 全局變量存儲
+        _G.ToggleStates = _G.ToggleStates or {}
+        local translateSpeed = 50
+        local translateConnection = nil
+        local translateAccelEnabled = false
+        _G.FastAttack = _G.FastAttack ~= nil and _G.FastAttack or true
+        
+        -- 確保 FOV 配置正確初始化
+        getgenv().CaiHuaConfig = getgenv().CaiHuaConfig or {
+            Toggles = {
+                FOV_Active = false
+            },
+            Settings = {
+                FOV = 70
+            }
+        }
+        
+        -- =====================================================
+        -- 創建主窗口 (已修改背景控制)
+        -- =====================================================
+        local Window
+        
+        -- 根據全局配置設定背景
+        local backgroundImage = "rbxassetid://140187958380334"
+        local backgroundTransparency = 0.4
+        
+        if _G.XiaoJieBackgroundConfig then
+            if _G.XiaoJieBackgroundConfig.Enabled then
+                backgroundImage = "rbxassetid://" .. _G.XiaoJieBackgroundConfig.ImageId
+                backgroundTransparency = _G.XiaoJieBackgroundConfig.Transparency
+            else
+                -- 停用背景：設為完全透明
+                backgroundTransparency = 1
+            end
+        end
+        
+        local success_window, err_window = pcall(function()
+            Window = WindUI:CreateWindow({
+                Title = "小傑腳本中心",
+                Icon = "rbxassetid://6031280882",
+                Author = "小傑",
+                Folder = "WindUI",
+                Size = UDim2.fromOffset(580, 460),
+                Transparent = false,
+                Theme = "Light",
+                ScrollBarEnabled = true,
+                Background = backgroundImage,
+                BackgroundImageTransparency = backgroundTransparency,
+            })
+        end)
+        
+        if not success_window or not Window then
+            warn("UI 窗口創建失敗: ", err_window)
+            game:GetService("StarterGui"):SetCore("SendNotification",{
+                Title = "錯誤",
+                Text = "UI 創建失敗: " .. tostring(err_window),
+                Duration = 10;
+            })
+            return
+        end
+        
+        -- N 快捷鍵開關 UI
+        Window:SetToggleKey(Enum.KeyCode.N)
+        
+        -- 創建所有標籤頁
+        local Tabs = {}
+        
+        -- 創建分區
+        local noticeSection = Window:Section({ Title = "公告區", Opened = true })
+        local functionSection = Window:Section({ Title = "主要功能", Opened = true })
+        local configSection = Window:Section({ Title = "主題配置", Opened = true })
+        
+        Tabs.NoticeTab = noticeSection:Tab({ Title = "公告", Icon = "info" })
+        Tabs.GeneralTab = functionSection:Tab({ Title = "功能1", Icon = "settings" })
+        Tabs.AttackTab = functionSection:Tab({ Title = "範圍攻擊", Icon = "sword" })
+        Tabs.ESPTab = functionSection:Tab({ Title = "透視", Icon = "eye" })
+        Tabs.TeleportTab = functionSection:Tab({ Title = "傳送", Icon = "map-pin" })
+        Tabs.ActivityTab = functionSection:Tab({ Title = "功能2", Icon = "info" })
+        Tabs.InstantKillTab = functionSection:Tab({ Title = "秒殺功能", Icon = "zap" })
+        Tabs.texiaoTab = configSection:Tab({ Title = "更改特效", Icon = "palette" })
+        Tabs.ThemeTab = configSection:Tab({ Title = "主題顏色", Icon = "palette" })
+        
+        -- ===================== 公告標籤頁 =====================
+        Tabs.NoticeTab:Paragraph({
+            Title = "小傑腳本中心",
+            Desc = "小傑製作\n持續更新\n腳本有問題請跟我說\n聚怪可能無效\n禁止亂打\n禁止亂打",
+            Image = "info",
+        })
+        
+        Tabs.NoticeTab:Divider()
+        
+        Tabs.NoticeTab:Paragraph({
+            Title = "快捷鍵說明",
+            Desc = "N: 開關界面 (已從 G 改為 N)",
+            Image = "keyboard",
+        })
+        
+-- ===================== 通用標籤頁（功能1）=====================
+
+-- 視角縮放距離
+local currentZoom = 128
+Tabs.GeneralTab:Slider({
+    Title = "視角縮放距離",
+    Value = { Min = 128, Max = 10000, Default = 128 },
+    Callback = function(value)
+        currentZoom = value
+        LocalPlayer.CameraMaxZoomDistance = value
+        WindUI:Notify({ Title = "視角縮放", Content = "已設置為: " .. value, Duration = 2 })
+    end
+})
+
+-- FOV 開關
+Tabs.GeneralTab:Toggle({
+    Title = "FOV 視角範圍",
+    Value = false,
+    Callback = function(state)
+        getgenv().CaiHuaConfig.Toggles.FOV_Active = state
+        if state then
+            Camera.FieldOfView = getgenv().CaiHuaConfig.Settings.FOV
+        else
+            Camera.FieldOfView = 70
+        end
+        WindUI:Notify({ 
+            Title = "FOV 視角範圍", 
+            Content = state and "已開啟" or "已關閉", 
+            Duration = 2 
+        })
+    end
+})
+
+-- FOV 滑塊
+Tabs.GeneralTab:Slider({
+    Title = "FOV 數值",
+    Value = { Min = 70, Max = 150, Default = 70 },
+    Callback = function(value)
+        getgenv().CaiHuaConfig.Settings.FOV = value
+        if getgenv().CaiHuaConfig.Toggles.FOV_Active then
+            Camera.FieldOfView = value
+        end
+        WindUI:Notify({ 
+            Title = "FOV 數值", 
+            Content = "已設置為: " .. value, 
+            Duration = 2 
+        })
+    end
+})
+
+-- FOV RenderStepped 控制
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        if getgenv().CaiHuaConfig.Toggles.FOV_Active then
+            Camera.FieldOfView = getgenv().CaiHuaConfig.Settings.FOV
+        end
+    end)
+end)
+
+Tabs.GeneralTab:Divider()
+
+-- 速度輸入
+local translateSpeed = 50
+Tabs.GeneralTab:Input({
+    Title = "速度",
+    Value = "50",
+    Placeholder = "輸入速度值",
+    Callback = function(value)
+        local speed = tonumber(value)
+        if speed then
+            translateSpeed = speed
+            WindUI:Notify({ Title = "速度設置", Content = "速度已設置為: " .. speed, Duration = 2 })
+        end
+    end
+})
+
+-- 加速開關
+local translateAccelEnabled = false
+local translateConnection = nil
+Tabs.GeneralTab:Toggle({
+    Title = "加速開關",
+    Value = false,
+    Callback = function(state)
+        translateAccelEnabled = state
+        if translateConnection then
+            translateConnection:Disconnect()
+            translateConnection = nil
+        end
+        if state then
+            translateConnection = RunService.Heartbeat:Connect(function()
+                local char = LocalPlayer.Character
+                if not char then return end
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if not humanoid or humanoid.Health <= 0 then return end
+                if humanoid.MoveDirection.Magnitude > 0 then
+                    local moveDirection = humanoid.MoveDirection
+                    local acceleration = moveDirection * translateSpeed / 30
+                    char:TranslateBy(acceleration)
+                end
+            end)
+            WindUI:Notify({ Title = "加速", Content = "加速已開啟", Duration = 2 })
+        else
+            WindUI:Notify({ Title = "加速", Content = "加速已關閉", Duration = 2 })
+        end
+    end
+})
+
+Tabs.GeneralTab:Divider()
+
+-- ================= 手機兼容的跳躍高度修改器 (純觸控點擊版) =================
+local JUMP_HEIGHT = 100
+local jumpEnabled = false
+local jumpHold = false
+local jumpConnection = nil
+local jumpInputBegan = nil
+local jumpInputEnded = nil
+local mobileJumpButton = nil
+local mobileJumpGui = nil
+local isMobile = false
+
+-- 檢測是否為手機設備
+local function detectMobile()
+    local guiService = game:GetService("GuiService")
+    local touchEnabled = UserInputService.TouchEnabled
+    local keyboardEnabled = UserInputService.KeyboardEnabled
+    local mouseEnabled = UserInputService.MouseEnabled
+    
+    if touchEnabled and not keyboardEnabled and not mouseEnabled then
+        return true
+    elseif guiService:IsTenFootInterface() then
+        return false
+    else
+        return false
+    end
+end
+
+isMobile = detectMobile()
+
+local function setupKeyboardJumpDetection()
+    if jumpInputBegan then
+        jumpInputBegan:Disconnect()
+        jumpInputBegan = nil
+    end
+    if jumpInputEnded then
+        jumpInputEnded:Disconnect()
+        jumpInputEnded = nil
+    end
+    
+    jumpInputBegan = UserInputService.InputBegan:Connect(function(input, gpe)
+        if gpe or not jumpEnabled then return end
+        if input.KeyCode == Enum.KeyCode.Space then
+            jumpHold = true
+        end
+        if input.KeyCode == Enum.KeyCode.ButtonA then
+            jumpHold = true
+        end
+    end)
+    
+    jumpInputEnded = UserInputService.InputEnded:Connect(function(input, gpe)
+        if input.KeyCode == Enum.KeyCode.Space then
+            jumpHold = false
+        end
+        if input.KeyCode == Enum.KeyCode.ButtonA then
+            jumpHold = false
+        end
+    end)
+end
+
+local function startJumpLoop()
+    if jumpConnection then
+        jumpConnection:Disconnect()
+        jumpConnection = nil
+    end
+    
+    jumpConnection = RunService.Heartbeat:Connect(function(dt)
+        if jumpEnabled and jumpHold then
+            local char = LocalPlayer.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if root and humanoid and humanoid.Health > 0 then
+                    if root.Velocity.Y < JUMP_HEIGHT then
+                        local force = JUMP_HEIGHT * 2
+                        root.Velocity = Vector3.new(root.Velocity.X, math.min(root.Velocity.Y + force * dt, JUMP_HEIGHT), root.Velocity.Z)
+                    end
+                    if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and 
+                       humanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
+                        humanoid.Jump = true
+                    end
+                end
+            end
+        else
+            local char = LocalPlayer.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.Jump = false
+                end
+            end
+        end
+    end)
+end
+
+local function createMobileJumpButton()
+    if mobileJumpGui then
+        mobileJumpGui:Destroy()
+        mobileJumpGui = nil
+    end
+    
+    mobileJumpGui = Instance.new("ScreenGui")
+    mobileJumpGui.Name = "MobileJumpButton"
+    mobileJumpGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    mobileJumpGui.ResetOnSpawn = false
+    mobileJumpGui.IgnoreGuiInset = true
+    mobileJumpGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    local button = Instance.new("ImageButton")
+    button.Name = "JumpButton"
+    button.Parent = mobileJumpGui
+    button.Size = UDim2.new(0, 120, 0, 120)
+    button.Position = UDim2.new(1, -140, 1, -140)
+    button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    button.BackgroundTransparency = 0.3
+    button.Image = "rbxassetid://6031280882"
+    button.ImageTransparency = 0.7
+    button.BorderSizePixel = 3
+    button.BorderColor3 = Color3.fromRGB(0, 150, 255)
+    button.ZIndex = 10
+    button.Active = true
+    button.Selectable = true
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 30)
+    corner.Parent = button
+    
+    -- 純觸控點擊事件
+    button.TouchTap:Connect(function()
+        if jumpEnabled then
+            local char = LocalPlayer.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if root and humanoid and humanoid.Health > 0 then
+                    root.Velocity = Vector3.new(root.Velocity.X, JUMP_HEIGHT, root.Velocity.Z)
+                    humanoid.Jump = true
+                end
+            end
+            
+            button.BackgroundColor3 = Color3.fromRGB(200, 200, 255)
+            task.wait(0.1)
+            button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        end
+    end)
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Parent = button
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = "跳躍\n(點擊)"
+    textLabel.TextSize = 18
+    textLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.ZIndex = 11
+    
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Parent = button
+    infoLabel.Size = UDim2.new(1, 0, 0.25, 0)
+    infoLabel.Position = UDim2.new(0, 0, 0.75, 0)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Text = string.format("↑ %d", JUMP_HEIGHT)
+    infoLabel.TextSize = 14
+    infoLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+    infoLabel.Font = Enum.Font.GothamBold
+    infoLabel.ZIndex = 11
+    
+    mobileJumpButton = button
+end
+
+local function updateJumpButtonHeight()
+    if mobileJumpButton and mobileJumpButton.Parent then
+        for _, child in ipairs(mobileJumpButton:GetChildren()) do
+            if child:IsA("TextLabel") and child.Size.Y.Scale < 1 then
+                child.Text = string.format("↑ %d", JUMP_HEIGHT)
+                break
+            end
+        end
+    end
+end
+
+local function setJumpEnabled(enabled)
+    jumpEnabled = enabled
+    
+    if enabled then
+        isMobile = detectMobile()
+        
+        if isMobile then
+            if not mobileJumpGui or not mobileJumpGui.Parent then
+                createMobileJumpButton()
+            else
+                mobileJumpGui.Enabled = true
+            end
+            WindUI:Notify({ 
+                Title = "跳躍修改", 
+                Content = "手機模式已開啟，點擊畫面右下角的跳躍按鈕", 
+                Duration = 3 
+            })
+        else
+            setupKeyboardJumpDetection()
+            WindUI:Notify({ 
+                Title = "跳躍修改", 
+                Content = "PC模式已開啟，按住空白鍵跳躍", 
+                Duration = 2 
+            })
+        end
+        
+        startJumpLoop()
+        updateJumpButtonHeight()
+    else
+        if jumpConnection then
+            jumpConnection:Disconnect()
+            jumpConnection = nil
+        end
+        if jumpInputBegan then
+            jumpInputBegan:Disconnect()
+            jumpInputBegan = nil
+        end
+        if jumpInputEnded then
+            jumpInputEnded:Disconnect()
+            jumpInputEnded = nil
+        end
+        
+        jumpHold = false
+        
+        if mobileJumpGui then
+            mobileJumpGui.Enabled = false
+        end
+        
+        local char = LocalPlayer.Character
+        if char then
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Jump = false
+            end
+        end
+        
+        WindUI:Notify({ 
+            Title = "跳躍修改", 
+            Content = "已關閉", 
+            Duration = 2 
+        })
+    end
+end
+
+local function setJumpHeight(height)
+    JUMP_HEIGHT = height
+    updateJumpButtonHeight()
+    WindUI:Notify({ 
+        Title = "跳躍高度", 
+        Content = "已設置為: " .. height, 
+        Duration = 2 
+    })
+end
+
+-- 角色重生時重新初始化
+LocalPlayer.CharacterAdded:Connect(function()
+    if jumpEnabled then
+        task.wait(1)
+        setJumpEnabled(false)
+        task.wait(0.2)
+        setJumpEnabled(true)
+    end
+end)
+
+-- 設備類型變化時重新檢測
+UserInputService.LastInputTypeChanged:Connect(function()
+    if jumpEnabled then
+        local newIsMobile = detectMobile()
+        if newIsMobile ~= isMobile then
+            isMobile = newIsMobile
+            setJumpEnabled(false)
+            task.wait(0.1)
+            setJumpEnabled(true)
+        end
+    end
+end)
+
+-- 跳躍高度輸入
+Tabs.GeneralTab:Input({
+    Title = "跳躍高度",
+    Value = "100",
+    Placeholder = "輸入跳躍高度 (10-1000)",
+    Callback = function(value)
+        local height = tonumber(value)
+        if height and height >= 10 and height <= 1000 then
+            setJumpHeight(height)
+        else
+            WindUI:Notify({ 
+                Title = "錯誤", 
+                Content = "請輸入 10 到 1000 之間的數字", 
+                Duration = 3 
+            })
+        end
+    end
+})
+
+-- 跳躍修改開關
+Tabs.GeneralTab:Toggle({
+    Title = "跳躍修改開關",
+    Value = false,
+    Callback = function(state)
+        setJumpEnabled(state)
+    end
+})
+
+Tabs.GeneralTab:Divider()
+
+-- ===================== 水上行走功能 =====================
+local WaterWalkEnabled = false
+local WaterBase = nil
+local waterWalkLoop = nil
+
+local function GetWaterBase()
+    if WaterBase and WaterBase.Parent then
+        return WaterBase
+    end
+    local Map = workspace:FindFirstChild("Map")
+    if Map then
+        WaterBase = Map:FindFirstChild("WaterBase-Plane")
+    end
+    return WaterBase
+end
+
+local function SetWaterWalk(enabled)
+    local waterBase = GetWaterBase()
+    if not waterBase then
+        waterBase = workspace:FindFirstChild("WaterBase-Plane")
+        if not waterBase then
+            waterBase = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("WaterBase")
+        end
+    end
+    
+    if waterBase and waterBase:IsA("BasePart") then
+        if enabled then
+            waterBase.Size = Vector3.new(1000, 112, 1000)
+            waterBase.CanCollide = true
+            WaterWalkEnabled = true
+            WindUI:Notify({ 
+                Title = "水上行走", 
+                Content = "已開啟 - 可以在水面上行走", 
+                Duration = 3 
+            })
+        else
+            waterBase.Size = Vector3.new(1000, 80, 1000)
+            WaterWalkEnabled = false
+            WindUI:Notify({ 
+                Title = "水上行走", 
+                Content = "已關閉", 
+                Duration = 2 
+            })
+        end
+    else
+        WindUI:Notify({ 
+            Title = "錯誤", 
+            Content = "找不到水面物件", 
+            Duration = 3,
+            Icon = "alert-triangle"
+        })
+    end
+end
+
+local function StartWaterWalkLoop()
+    if waterWalkLoop then
+        task.cancel(waterWalkLoop)
+        waterWalkLoop = nil
+    end
+    
+    waterWalkLoop = task.spawn(function()
+        while WaterWalkEnabled do
+            task.wait(2)
+            pcall(function()
+                if WaterWalkEnabled then
+                    local waterBase = GetWaterBase()
+                    if waterBase and waterBase:IsA("BasePart") then
+                        if waterBase.Size.Y ~= 112 then
+                            waterBase.Size = Vector3.new(1000, 112, 1000)
+                        end
+                    end
+                end
+            end)
+        end
+        waterWalkLoop = nil
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if WaterWalkEnabled then
+        task.wait(1)
+        SetWaterWalk(true)
+    end
+end)
+
+workspace.DescendantAdded:Connect(function(descendant)
+    if WaterWalkEnabled and (descendant.Name == "WaterBase-Plane" or descendant.Name == "WaterBase") then
+        if descendant:IsA("BasePart") then
+            task.wait(0.5)
+            descendant.Size = Vector3.new(1000, 112, 1000)
+            descendant.CanCollide = true
+        end
+    end
+end)
+
+Tabs.GeneralTab:Toggle({
+    Title = "水上行走",
+    Value = false,
+    Callback = function(state)
+        SetWaterWalk(state)
+        if state then
+            StartWaterWalkLoop()
+        else
+            if waterWalkLoop then
+                task.cancel(waterWalkLoop)
+                waterWalkLoop = nil
+            end
+        end
+    end
+})
+
+Tabs.GeneralTab:Divider()
+
+-- 外部腳本按鈕
+Tabs.GeneralTab:Button({
+    Title = "飛行",
+    Icon = "wind",
+    Callback = function()
+        WindUI:Notify({ Title = "飛行", Content = "正在加載飛行腳本...", Duration = 3 })
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/zo%20vu/%E9%9D%9E"))()
+        end)
+    end
+})
+
+Tabs.GeneralTab:Button({
+    Title = "自瞄(xeno跟一些執行器不支持)",
+    Icon = "wind",
+    Callback = function()
+        WindUI:Notify({ Title = "自苗", Content = "正在加載自苗腳本...", Duration = 3 })
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E8%87%AA%E4%B8%AD"))()
+        end)
+    end
+})
+
+Tabs.GeneralTab:Button({
+    Title = "自瞄(xeno跟一些執行器不支持(wind ui版) )",
+    Icon = "wind",
+    Callback = function()
+        WindUI:Notify({ Title = "自苗", Content = "正在加載自苗腳本...", Duration = 3 })
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/wind"))()
+        end)
+    end
+})
+
+Tabs.GeneralTab:Button({
+    Title = "傳送",
+    Icon = "monitor",
+    Callback = function()
+        WindUI:Notify({ Title = "傳送", Content = "正在加載追蹤腳本...", Duration = 3 })
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E8%BF%BD"))()
+        end)
+    end
+})
+
+Tabs.GeneralTab:Button({
+    Title = "地下城",
+    Icon = "monitor",
+    Callback = function()
+        WindUI:Notify({ Title = "地下城", Content = "正在加載地下城腳本...", Duration = 3 })
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E5%9C%B0%E4%B8%8B"))()
+        end)
+    end
+})
+
+Tabs.GeneralTab:Button({
+    Title = "減畫質",
+    Icon = "monitor",
+    Callback = function()
+        WindUI:Notify({ Title = "減畫質", Content = "正在加載畫質優化腳本...", Duration = 3 })
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E7%95%AB%E8%B3%AA"))()
+        end)
+    end
+})
+
+Tabs.GeneralTab:Button({
+    Title = "移除岩漿and鬼船傷害",
+    Icon = "flame",
+    Callback = function()
+        WindUI:Notify({ Title = "移除岩漿and鬼船傷害", Content = "正在加載腳本...", Duration = 3 })
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E5%B2%A9%E6%BC%BF"))()
+        end)
+    end
+})
+
+Tabs.GeneralTab:Button({
+    Title = "移除霧",
+    Icon = "cloud-off",
+    Callback = function()
+        WindUI:Notify({ Title = "移除霧", Content = "正在加載腳本...", Duration = 3 })
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E9%9C%A7"))()
+        end)
+    end
+})
+
+        -- ===================== 範圍攻擊系統 =====================
+        local VirtualInputManager = game:GetService("VirtualInputManager") 
+        local Modules = ReplicatedStorage:WaitForChild("Modules") 
+        local Net = Modules:WaitForChild("Net") 
+        local RegisterAttack = Net:WaitForChild("RE/RegisterAttack") 
+        local RegisterHit = Net:WaitForChild("RE/RegisterHit") 
+        
+        local AttackConfig = { 
+            Enabled = true, 
+            AttackDistance = 5000, 
+            AttackDelay = 0.3, 
+            AttackMobs = true, 
+            AttackPlayers = true, 
+            MaxCombo = 3, 
+            ComboResetTime = 0.3 
+        } 
+        
+        local UniversalAttack = {} 
+        UniversalAttack.__index = UniversalAttack 
+        
+        function UniversalAttack.new() 
+            local self = setmetatable({ 
+                Debounce = 0, 
+                ComboDebounce = 0, 
+                ShootDebounce = 0, 
+                M1Combo = 0, 
+                EnemyRootPart = nil, 
+                LastAttackTime = 0, 
+                LastScanTime = 0, 
+                CachedTargets = {}, 
+                AttackConnection = nil 
+            }, UniversalAttack) 
+            return self 
+        end 
+        
+        function UniversalAttack:IsTargetAlive(target) 
+            local humanoid = target and target:FindFirstChild("Humanoid") 
+            return humanoid and humanoid.Health > 0 
+        end 
+        
+        function UniversalAttack:GetAllTargets(character) 
+            local currentTime = tick() 
+            if currentTime - self.LastScanTime < 0.3 and #self.CachedTargets > 0 then 
+                return self.CachedTargets 
+            end 
+            
+            local targets = {} 
+            local characterPos = character and character:GetPivot().Position 
+            
+            if not characterPos then 
+                self.CachedTargets = targets 
+                return targets 
+            end 
+            
+            if AttackConfig.AttackMobs then 
+                local enemies = Workspace:FindFirstChild("Enemies") 
+                if enemies then 
+                    for _, enemy in ipairs(enemies:GetChildren()) do 
+                        if enemy ~= character and self:IsTargetAlive(enemy) then 
+                            local rootPart = enemy:FindFirstChild("HumanoidRootPart") 
+                            if rootPart and (characterPos - rootPart.Position).Magnitude <= AttackConfig.AttackDistance then 
+                                if not self.EnemyRootPart then 
+                                    self.EnemyRootPart = rootPart 
+                                end 
+                                table.insert(targets, {enemy, rootPart}) 
+                            end 
+                        end 
+                    end 
+                end 
+            end 
+            
+            if AttackConfig.AttackPlayers then 
+                for _, player in ipairs(Players:GetPlayers()) do 
+                    if player ~= LocalPlayer then 
+                        local targetChar = player.Character 
+                        if targetChar and self:IsTargetAlive(targetChar) then 
+                            local rootPart = targetChar:FindFirstChild("HumanoidRootPart") 
+                            if rootPart and (characterPos - rootPart.Position).Magnitude <= AttackConfig.AttackDistance then 
+                                if not self.EnemyRootPart then 
+                                    self.EnemyRootPart = rootPart 
+                                end 
+                                table.insert(targets, {targetChar, rootPart}) 
+                            end 
+                        end 
+                    end 
+                end 
+            end 
+            
+            self.LastScanTime = currentTime 
+            self.CachedTargets = targets 
+            return targets 
+        end 
+        
+        function UniversalAttack:GetCombo() 
+            local currentTime = tick() 
+            local combo = (currentTime - self.ComboDebounce) <= AttackConfig.ComboResetTime and self.M1Combo or 0 
+            combo = combo >= AttackConfig.MaxCombo and 1 or combo + 1 
+            self.ComboDebounce = currentTime 
+            self.M1Combo = combo 
+            return combo 
+        end 
+        
+        function UniversalAttack:HandleFruitAttack(character, equipped, combo) 
+            local targets = self:GetAllTargets(character) 
+            if not targets[1] then return end 
+            
+            local fruitRemote = equipped:FindFirstChild("LeftClickRemote") 
+            if fruitRemote then 
+                local direction = (targets[1][2].Position - character:GetPivot().Position).Unit 
+                fruitRemote:FireServer(direction, combo) 
+            end 
+        end 
+        
+        function UniversalAttack:HandleMeleeAttack(character) 
+            self.EnemyRootPart = nil 
+            local targets = self:GetAllTargets(character) 
+            
+            if self.EnemyRootPart then 
+                RegisterAttack:FireServer(AttackConfig.AttackDelay) 
+                RegisterHit:FireServer(self.EnemyRootPart, targets) 
+            end 
+        end 
+        
+        function UniversalAttack:Attack() 
+            if not AttackConfig.Enabled then return end 
+            
+            local currentTime = tick() 
+            if (currentTime - self.Debounce) < AttackConfig.AttackDelay then return end 
+            
+            local character = LocalPlayer.Character 
+            if not character or not character:FindFirstChild("Humanoid") then return end 
+            
+            local equipped = character:FindFirstChildOfClass("Tool") 
+            if not equipped then return end 
+            
+            local combo = self:GetCombo() 
+            self.Debounce = combo >= AttackConfig.MaxCombo and (currentTime + 0.05) or currentTime 
+            
+            local toolTip = equipped.ToolTip 
+            if toolTip == "Blox Fruit" then 
+                self:HandleFruitAttack(character, equipped, combo) 
+            elseif toolTip == "Sword" or toolTip == "Melee" then 
+                self:HandleMeleeAttack(character) 
+            else 
+                self:HandleMeleeAttack(character) 
+            end 
+            
+            self.LastAttackTime = currentTime 
+        end 
+        
+        local attackSystem = UniversalAttack.new() 
+        local attackConnection = nil 
+        
+        local function startAttackLoop() 
+            if attackConnection then 
+                attackConnection:Disconnect() 
+                attackConnection = nil 
+            end 
+            
+            attackSystem = UniversalAttack.new() 
+            
+            attackConnection = RunService.Heartbeat:Connect(function() 
+                if AttackConfig.Enabled then 
+                    pcall(function() 
+                        attackSystem:Attack() 
+                    end) 
+                end 
+            end) 
+        end 
+        
+        startAttackLoop() 
+        
+        LocalPlayer.CharacterAdded:Connect(function(character) 
+            task.wait(2) 
+            if AttackConfig.Enabled then 
+                startAttackLoop() 
+            end 
+        end) 
+        
+        LocalPlayer.CharacterRemoving:Connect(function() 
+            if attackConnection then 
+                attackConnection:Disconnect() 
+                attackConnection = nil 
+            end 
+        end) 
+        
+        local function ReconnectRemotes() 
+            Modules = ReplicatedStorage:WaitForChild("Modules") 
+            Net = Modules:WaitForChild("Net") 
+            RegisterAttack = Net:WaitForChild("RE/RegisterAttack") 
+            RegisterHit = Net:WaitForChild("RE/RegisterHit") 
+        end 
+        
+        local function OnCharacterRespawn() 
+            ReconnectRemotes() 
+            
+            if AttackConfig.Enabled then 
+                task.wait(1) 
+                startAttackLoop() 
+            end 
+        end 
+        
+        LocalPlayer.CharacterAdded:Connect(function(character) 
+            task.wait(2) 
+            OnCharacterRespawn() 
+        end) 
+        
+        -- ===================== 範圍攻擊標籤頁 UI ===================== 
+        
+        Tabs.AttackTab:Toggle({ 
+            Title = "快速攻擊開關", 
+            Value = true, 
+            Callback = function(state) 
+                AttackConfig.Enabled = state 
+                if state then 
+                    startAttackLoop() 
+                    WindUI:Notify({ 
+                        Title = "快速攻擊", 
+                        Content = "已開啟", 
+                        Duration = 2 
+                    }) 
+                else 
+                    if attackConnection then 
+                        attackConnection:Disconnect() 
+                        attackConnection = nil 
+                    end 
+                    WindUI:Notify({ 
+                        Title = "快速攻擊", 
+                        Content = "已關閉", 
+                        Duration = 2 
+                    }) 
+                end 
+            end 
+        }) 
+        
+        Tabs.AttackTab:Divider() 
+        
+        Tabs.AttackTab:Slider({ 
+            Title = "攻擊範圍", 
+            Value = { Min = 50, Max = 10000, Default = 5000 }, 
+            Callback = function(value) 
+                AttackConfig.AttackDistance = value 
+                WindUI:Notify({ 
+                    Title = "攻擊範圍", 
+                    Content = "已設置為: " .. value, 
+                    Duration = 2 
+                }) 
+            end 
+        }) 
+        
+        Tabs.AttackTab:Input({ 
+            Title = "攻擊速度（秒）", 
+            Value = "0.3", 
+            Placeholder = "輸入攻擊間隔 (例: 0.1)", 
+            Callback = function(value) 
+                local speed = tonumber(value) 
+                if speed and speed >= 0.03 and speed <= 2 then 
+                    AttackConfig.AttackDelay = speed 
+                    WindUI:Notify({ 
+                        Title = "攻擊速度", 
+                        Content = string.format("已設置為: %.3f秒 (約%d次/秒)", speed, math.floor(1/speed)), 
+                        Duration = 3 
+                    }) 
+                    
+                    if AttackConfig.Enabled then 
+                        startAttackLoop() 
+                    end 
+                else 
+                    WindUI:Notify({ 
+                        Title = "錯誤", 
+                        Content = "請輸入 0.03 到 2 之間的數字", 
+                        Duration = 3 
+                    }) 
+                end 
+            end 
+        }) 
+        
+        Tabs.AttackTab:Divider() 
+        
+        Tabs.AttackTab:Toggle({ 
+            Title = "攻擊NPC/怪物", 
+            Value = true, 
+            Callback = function(state) 
+                AttackConfig.AttackMobs = state 
+                WindUI:Notify({ 
+                    Title = "攻擊NPC", 
+                    Content = state and "已開啟" or "已關閉", 
+                    Duration = 2 
+                }) 
+            end 
+        }) 
+        
+        Tabs.AttackTab:Toggle({ 
+            Title = "攻擊玩家", 
+            Value = true, 
+            Callback = function(state) 
+                AttackConfig.AttackPlayers = state 
+                WindUI:Notify({ 
+                    Title = "攻擊玩家", 
+                    Content = state and "已開啟" or "已關閉", 
+                    Duration = 2 
+                }) 
+            end
+        })
+        
+        Tabs.AttackTab:Divider()
+        
+        local AutoHakiEnabled = false
+        local autoHakiTask = nil
+        
+        local function startAutoHakiLoop()
+            if autoHakiTask then
+                task.cancel(autoHakiTask)
+                autoHakiTask = nil
+            end
+            autoHakiTask = task.spawn(function()
+                while AutoHakiEnabled do
+                    task.wait(0.2)
+                    if AutoHakiEnabled and LocalPlayer.Character and not LocalPlayer.Character:FindFirstChild("HasBuso") then
+                        pcall(function()
+                            ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+                        end)
+                    end
+                end
+                autoHakiTask = nil
+            end)
+        end
+        
+        Tabs.AttackTab:Toggle({
+            Title = "自動武裝色",
+            Value = false,
+            Callback = function(state)
+                AutoHakiEnabled = state
+                if state then
+                    startAutoHakiLoop()
+                    WindUI:Notify({ Title = "自動武裝色", Content = "已開啟", Duration = 2 })
+                else
+                    if autoHakiTask then
+                        task.cancel(autoHakiTask)
+                        autoHakiTask = nil
+                    end
+                    WindUI:Notify({ Title = "自動武裝色", Content = "已關閉", Duration = 2 })
+                end
+            end
+        })
+        
+        local autoV4Task = nil
+        local function callAwakeningRemote()
+            local character = LocalPlayer.Character
+            if not character then return end
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then return end
+            local Backpack = LocalPlayer:FindFirstChild("Backpack")
+            if not Backpack then return end
+            local Awakening = Backpack:FindFirstChild("Awakening")
+            if not Awakening then return end
+            local RemoteFunc = Awakening:FindFirstChild("RemoteFunction")
+            if not RemoteFunc then return end
+            pcall(function()
+                RemoteFunc:InvokeServer(true)
+            end)
+        end
+        
+        Tabs.AttackTab:Toggle({
+            Title = "自動V4",
+            Value = false,
+            Callback = function(state)
+                _G.ToggleStates["自動V4"] = state
+                if autoV4Task then
+                    task.cancel(autoV4Task)
+                    autoV4Task = nil
+                end
+                if state then
+                    autoV4Task = task.spawn(function()
+                        while _G.ToggleStates["自動V4"] do
+                            callAwakeningRemote()
+                            task.wait(1)
+                        end
+                        autoV4Task = nil
+                    end)
+                    WindUI:Notify({ Title = "自動V4", Content = "已開啟", Duration = 2 })
+                else
+                    WindUI:Notify({ Title = "自動V4", Content = "已關閉", Duration = 2 })
+                end
+            end
+        })
+        
+        local autoV3Task = nil
+        local function callRaceV3Remote()
+            local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            if not Remotes then return end
+            local CommE = Remotes:FindFirstChild("CommE")
+            if not CommE then return end
+            pcall(function()
+                CommE:FireServer("ActivateAbility")
+            end)
+        end
+        
+        Tabs.AttackTab:Toggle({
+            Title = "自動V3",
+            Value = false,
+            Callback = function(state)
+                _G.ToggleStates["自動V3"] = state
+                if autoV3Task then
+                    task.cancel(autoV3Task)
+                    autoV3Task = nil
+                end
+                if state then
+                    autoV3Task = task.spawn(function()
+                        while _G.ToggleStates["自動V3"] do
+                            callRaceV3Remote()
+                            task.wait(1)
+                        end
+                        autoV3Task = nil
+                    end)
+                    WindUI:Notify({ Title = "自動V3", Content = "已開啟", Duration = 2 })
+                else
+                    WindUI:Notify({ Title = "自動V3", Content = "已關閉", Duration = 2 })
+                end
+            end
+        })
+        
+        -- ===================== ESP透視標籤頁 =====================
+        local espEnabled = false
+        local espObjects = {}
+        local RandomID = math.random(1, 1000000)
+        
+        local function Round(num)
+            return math.floor(tonumber(num) + 0.5)
+        end
+        
+        local function getTeamColor(player)
+            if player.Team ~= LocalPlayer.Team then
+                return Color3.fromRGB(255, 0, 0)
+            else
+                return Color3.fromRGB(0, 0, 255)
+            end
+        end
+        
+        local function removeESP(player)
+            if espObjects[player] then
+                for _, v in pairs(espObjects[player]) do
+                    if typeof(v) == "Instance" and v.Parent then
+                        v:Destroy()
+                    end
+                end
+                espObjects[player] = nil
+            end
+        end
+        
+        local function createESP(player)
+            if player == LocalPlayer then return end
+            if not player.Character then return end
+            
+            removeESP(player)
+            
+            local head = player.Character:FindFirstChild("Head")
+            if not head then return end
+        
+            local highlight = Instance.new("Highlight")
+            highlight.Adornee = player.Character
+            highlight.FillTransparency = 0.7
+            highlight.OutlineColor = getTeamColor(player)
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.Parent = player.Character
+        
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "NameESP_" .. RandomID
+            billboard.Adornee = head
+            billboard.Size = UDim2.new(0, 200, 0, 50)
+            billboard.AlwaysOnTop = true
+            billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+            billboard.Parent = head
+        
+            local avatar = Instance.new("ImageLabel")
+            avatar.Size = UDim2.new(0, 45, 0, 45)
+            avatar.Position = UDim2.new(0, 0, 0, 0)
+            avatar.BackgroundTransparency = 1
+            avatar.BorderSizePixel = 0
+            avatar.Image = "https://www.roblox.com/headshot-thumbnail/image?userId="..player.UserId.."&width=150&height=150&format=png"
+            avatar.Parent = billboard
+        
+            local text = Instance.new("TextLabel")
+            text.Size = UDim2.new(1, -50, 1, 0)
+            text.Position = UDim2.new(0, 50, 0, 0)
+            text.BackgroundTransparency = 1
+            text.TextStrokeTransparency = 0.5
+            text.TextScaled = true
+            text.Font = Enum.Font.Code
+            text.TextYAlignment = Enum.TextYAlignment.Top
+            text.TextXAlignment = Enum.TextXAlignment.Left
+            text.TextColor3 = getTeamColor(player)
+            text.Parent = billboard
+        
+            espObjects[player] = { highlight = highlight, billboard = billboard, text = text, avatar = avatar }
+        
+            task.spawn(function()
+                while espEnabled and player and player.Parent and espObjects[player] do
+                    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                        local root = player.Character.HumanoidRootPart
+                        local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if root and localRoot then
+                            local distance = Round((root.Position - localRoot.Position).Magnitude)
+                            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                            local healthPercent = humanoid and Round((humanoid.Health / humanoid.MaxHealth) * 100) or 0
+                            if espObjects[player] and espObjects[player].text then
+                                espObjects[player].text.Text = string.format("%s | %d M\nHealth: %d%%", player.Name, distance, healthPercent)
+                            end
+                        end
+                    else
+                        break
+                    end
+                    task.wait(0.2)
+                end
+            end)
+        end
+        
+        local function setupPlayerConnections(player)
+            player.CharacterAdded:Connect(function(character)
+                if espEnabled then
+                    task.wait(0.5)
+                    createESP(player)
+                end
+            end)
+            player.CharacterRemoving:Connect(function()
+                removeESP(player)
+            end)
+        end
+        
+        local function enableESPPro()
+            espEnabled = true
+            for _, p in pairs(Players:GetPlayers()) do
+                setupPlayerConnections(p)
+                if p.Character then
+                    task.wait(0.1)
+                    createESP(p)
+                end
+            end
+            WindUI:Notify({ Title = "ESP Pro", Content = "已啟用ESP", Duration = 2 })
+        end
+        
+        local function disableESPPro()
+            espEnabled = false
+            for player, _ in pairs(espObjects) do
+                removeESP(player)
+            end
+            espObjects = {}
+            WindUI:Notify({ Title = "ESP Pro", Content = "已禁用ESP", Duration = 2 })
+        end
+        
+        -- ===================== 新加的ESP系統 =====================
+        local ESPConfig = {
+            MainSwitch = false,     
+            ShowPlayerInfo = false,
+            ShowTracer = false       
+        }
+        
+        local ESPElements = {}
+        
+        local function CleanupPlayerESP(player)
+            if not ESPElements[player.UserId] then return end
+            
+            if ESPElements[player.UserId].PlayerInfoESP then
+                ESPElements[player.UserId].PlayerInfoESP:Destroy()
+                ESPElements[player.UserId].PlayerInfoESP = nil
+            end
+            if ESPElements[player.UserId].PlayerInfoUpdateConn then
+                ESPElements[player.UserId].PlayerInfoUpdateConn:Disconnect()
+                ESPElements[player.UserId].PlayerInfoUpdateConn = nil
+            end
+            
+            if ESPElements[player.UserId].Tracer then
+                ESPElements[player.UserId].Tracer:Remove()
+                ESPElements[player.UserId].Tracer = nil
+            end
+            if ESPElements[player.UserId].TracerConn then
+                ESPElements[player.UserId].TracerConn:Disconnect()
+                ESPElements[player.UserId].TracerConn = nil
+            end
+        end
+        
+        local function CreatePlayerInfoESP(player)
+            if not player.Character or not player.Character:FindFirstChild("Head") then return end
+            local head = player.Character.Head
+            
+            if ESPElements[player.UserId] and ESPElements[player.UserId].PlayerInfoESP then
+                ESPElements[player.UserId].PlayerInfoESP:Destroy()
+            end
+            
+            local billboardGui = Instance.new("BillboardGui")
+            billboardGui.Name = "PlayerInfoESP"
+            billboardGui.Adornee = head
+            billboardGui.Size = UDim2.new(0, 150, 0, 60)
+            billboardGui.StudsOffset = Vector3.new(0, 3.5, 0)
+            billboardGui.AlwaysOnTop = true
+            billboardGui.Parent = head
+            
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Name = "NameLabel"
+            nameLabel.Parent = billboardGui
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Size = UDim2.new(1, 0, 0.25, 0)
+            nameLabel.Position = UDim2.new(0, 0, 0, 0)
+            nameLabel.TextColor3 = Color3.new(1, 1, 1)
+            nameLabel.TextScaled = true 
+            nameLabel.Font = Enum.Font.GothamSemibold
+            nameLabel.Text = player.Name
+            
+            local distanceLabel = Instance.new("TextLabel")
+            distanceLabel.Name = "DistanceLabel"
+            distanceLabel.Parent = billboardGui
+            distanceLabel.BackgroundTransparency = 1
+            distanceLabel.Size = UDim2.new(1, 0, 0.25, 0)
+            distanceLabel.Position = UDim2.new(0, 0, 0.25, 0)
+            distanceLabel.TextColor3 = Color3.new(1, 0.5, 0)
+            distanceLabel.TextScaled = true
+            distanceLabel.Font = Enum.Font.Gotham
+            
+            local healthLabel = Instance.new("TextLabel")
+            healthLabel.Name = "HealthLabel"
+            healthLabel.Parent = billboardGui
+            healthLabel.BackgroundTransparency = 1
+            healthLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            healthLabel.Position = UDim2.new(0, 0, 0.5, 0)
+            healthLabel.TextColor3 = Color3.new(0, 1, 0)
+            healthLabel.TextScaled = true 
+            healthLabel.Font = Enum.Font.Gotham
+            
+            local updateConnection = RunService.RenderStepped:Connect(function()
+                if not billboardGui.Parent or not LocalPlayer.Character or not player.Character then 
+                    return 
+                end
+                
+                local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                if localRoot and targetRoot then
+                    local distance = (localRoot.Position - targetRoot.Position).Magnitude
+                    distanceLabel.Text = string.format("距離: %.1f米", distance)   
+                end
+                
+                local humanoid = player.Character:FindFirstChild("Humanoid")
+                if humanoid then
+                    local health = math.floor(humanoid.Health)
+                    local maxHealth = math.floor(humanoid.MaxHealth)
+                    
+                    local healthPercent = health / maxHealth
+                    if healthPercent > 0.7 then
+                        healthLabel.TextColor3 = Color3.new(0, 1, 0)
+                    elseif healthPercent > 0.3 then
+                        healthLabel.TextColor3 = Color3.new(1, 1, 0)
+                    else
+                        healthLabel.TextColor3 = Color3.new(1, 0, 0)
+                    end
+                    
+                    healthLabel.Text = string.format("血量: %d/%d (%.0f%%)", health, maxHealth, healthPercent * 100)
+                else
+                    healthLabel.Text = "血量: N/A"
+                end
+            end)
+            
+            ESPElements[player.UserId] = ESPElements[player.UserId] or {}
+            ESPElements[player.UserId].PlayerInfoESP = billboardGui
+            ESPElements[player.UserId].PlayerInfoUpdateConn = updateConnection
+        end
+        
+        local function CreateTracerESP(player)
+            if ESPElements[player.UserId] and ESPElements[player.UserId].Tracer then
+                ESPElements[player.UserId].Tracer:Remove()
+            end
+            
+            local tracer = Drawing.new("Line")
+            tracer.Color = Color3.new(1, 0, 0)
+            tracer.Thickness = 2
+            tracer.Transparency = 0.8
+            tracer.Visible = false
+            
+            local renderConnection = RunService.RenderStepped:Connect(function()
+                if not ESPConfig.MainSwitch or not ESPConfig.ShowTracer then
+                    tracer.Visible = false
+                    return
+                end
+                
+                local localChar = LocalPlayer.Character
+                local targetChar = player.Character
+                if not localChar or not targetChar then
+                    tracer.Visible = false
+                    return
+                end
+                
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    local screenPos, isVisible = Camera:WorldToViewportPoint(targetRoot.Position)
+                    if isVisible then
+                        tracer.Visible = true
+                        tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                        tracer.To = Vector2.new(screenPos.X, screenPos.Y)
+                    else
+                        tracer.Visible = false
+                    end
+                else
+                    tracer.Visible = false
+                end
+            end)
+            
+            ESPElements[player.UserId] = ESPElements[player.UserId] or {}
+            ESPElements[player.UserId].Tracer = tracer
+            ESPElements[player.UserId].TracerConn = renderConnection
+        end
+        
+        local function UpdatePlayerESP(player)
+            if player == LocalPlayer then return end
+            
+            if not player.Character then
+                CleanupPlayerESP(player)
+                return
+            end
+            
+            if not player.Character:FindFirstChild("Head") or not player.Character:FindFirstChild("HumanoidRootPart") then
+                CleanupPlayerESP(player)
+                return
+            end
+            
+            if ESPConfig.MainSwitch then
+                CreateTracerESP(player)
+                
+                if ESPConfig.ShowPlayerInfo then
+                    CreatePlayerInfoESP(player)
+                else
+                    if ESPElements[player.UserId] and ESPElements[player.UserId].PlayerInfoESP then
+                        ESPElements[player.UserId].PlayerInfoESP:Destroy()
+                        ESPElements[player.UserId].PlayerInfoESP = nil
+                    end
+                    if ESPElements[player.UserId] and ESPElements[player.UserId].PlayerInfoUpdateConn then
+                        ESPElements[player.UserId].PlayerInfoUpdateConn:Disconnect()
+                        ESPElements[player.UserId].PlayerInfoUpdateConn = nil
+                    end
+                end
+            else
+                CleanupPlayerESP(player)
+            end
+        end
+        
+        local function UpdateAllESP()
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    UpdatePlayerESP(player)
+                end
+            end
+        end
+        
+        local function HandlePlayerRespawn(player)
+            local character = player.Character
+            if not character then
+                character = player.CharacterAdded:Wait()
+            end
+            
+            local head = character:WaitForChild("Head", 5)
+            local rootPart = character:WaitForChild("HumanoidRootPart", 5)
+            local humanoid = character:WaitForChild("Humanoid", 5)
+            
+            if head and rootPart and humanoid then
+                task.wait(0.5)
+                UpdatePlayerESP(player)
+                task.wait(1)
+                UpdatePlayerESP(player)
+            end
+        end
+        
+        task.spawn(function()
+            Players.PlayerAdded:Connect(function(player)
+                if player == LocalPlayer then return end
+                
+                if player.Character then
+                    task.spawn(HandlePlayerRespawn, player)
+                end
+                
+                player.CharacterAdded:Connect(function()
+                    task.spawn(HandlePlayerRespawn, player)
+                end)
+                
+                player.CharacterRemoving:Connect(function()
+                    CleanupPlayerESP(player)
+                end)
+            end)
+            
+            LocalPlayer.CharacterAdded:Connect(function()
+                task.wait(1) 
+                UpdateAllESP()
+            end)
+            
+            while true do
+                task.wait(3) 
+                if ESPConfig.MainSwitch then
+                    UpdateAllESP()
+                end
+            end
+        end)
+        
+        -- ===================== ESP UI控制 =====================
+        Tabs.ESPTab:Toggle({
+            Title = "ESP Pro",
+            Value = false,
+            Callback = function(state)
+                if state then
+                    enableESPPro()
+                else
+                    disableESPPro()
+                end
+            end
+        })
+        
+        Tabs.ESPTab:Divider()
+        
+        Tabs.ESPTab:Toggle({
+            Title = "進階ESP總開關",
+            Value = false,
+            Callback = function(enabled)
+                ESPConfig.MainSwitch = enabled
+                if enabled then
+                    WindUI:Notify({ 
+                        Title = "進階ESP", 
+                        Content = "已開啟", 
+                        Duration = 2 
+                    })
+                else
+                    WindUI:Notify({ 
+                        Title = "進階ESP", 
+                        Content = "已關閉", 
+                        Duration = 2 
+                    })
+                end
+                UpdateAllESP()
+            end
+        })
+        
+        Tabs.ESPTab:Toggle({
+            Title = "顯示玩家信息",
+            Value = false,
+            Callback = function(enabled)
+                ESPConfig.ShowPlayerInfo = enabled
+                UpdateAllESP()
+                WindUI:Notify({ 
+                    Title = "玩家信息", 
+                    Content = enabled and "已開啟" or "已關閉", 
+                    Duration = 2 
+                })
+            end
+        })
+        
+        Tabs.ESPTab:Toggle({
+            Title = "射線追踪（屏幕中心）",
+            Value = false,
+            Callback = function(enabled)
+                ESPConfig.ShowTracer = enabled
+                UpdateAllESP()
+                WindUI:Notify({ 
+                    Title = "射线追踪", 
+                    Content = enabled and "已開啟" or "已關閉", 
+                    Duration = 2 
+                })
+            end
+        })
+        
+        for _, p in pairs(Players:GetPlayers()) do
+            setupPlayerConnections(p)
+        end
+        
+        -- ===================== 傳送標籤頁（追蹤傳送 + 直接傳送 + 單次傳送 + 獨立循環傳送）=====================
+        
+        -- 追蹤傳送設定
+        local TrackConfig = {
+            Enabled = false,
+            Target = nil,
+            OffsetX = 0,
+            OffsetY = 0,
+            OffsetZ = 0,
+            Speed = 360,
+            TrackThread = nil,
+        }
+        
+        -- 直接傳送設定
+        local InstantConfig = {
+            Enabled = false,
+            Target = nil,
+            TeleportConnection = nil,
+        }
+        
+        -- 單次傳送設定
+        local SingleConfig = {
+            Target = nil,
+        }
+        
+        -- 循環傳送設定
+        local CycleConfig = {
+            Enabled = false,
+            Target = nil,
+            CycleThread = nil,
+            Interval = 0.1,
+            OffsetY = 0,
+        }
+        
+        -- 玩家列表相關變數
+        local playerList = {}
+        local playerMap = {}
+        local selectedPlayer = nil
+        local playerDropdown = nil
+        local trackButton = nil
+        local instantButton = nil
+        local cycleButton = nil
+        local singleButton = nil
+        local refreshButton = nil
+        
+        -- 儲存原始碰撞狀態
+        local originalCollisionStates = {}
+        
+        -- 設定X軸偏離
+        local function SetOffsetX(value)
+            value = tonumber(value)
+            if not value or value < -500000000 or value > 500000000 then
+                WindUI:Notify({ Title = "錯誤", Content = "X軸請輸入 -5000 到 5000 的數字", Duration = 2 })
+                return false
+            end
+            TrackConfig.OffsetX = value
+            WindUI:Notify({ Title = "追蹤傳送", Content = "X軸偏離已設為: " .. value, Duration = 2 })
+            return true
+        end
+        
+        -- 設定Y軸偏離
+        local function SetOffsetY(value)
+            value = tonumber(value)
+            if not value or value < -500000000 or value > 500000000 then
+                WindUI:Notify({ Title = "錯誤", Content = "Y軸請輸入 -500000000 到 500000000 的數字", Duration = 2 })
+                return false
+            end
+            TrackConfig.OffsetY = value
+            WindUI:Notify({ Title = "追蹤傳送", Content = "Y軸偏離已設為: " .. value, Duration = 2 })
+            return true
+        end
+        
+        -- 設定Z軸偏離
+        local function SetOffsetZ(value)
+            value = tonumber(value)
+            if not value or value < -500000000 or value > 500000000 then
+                WindUI:Notify({ Title = "錯誤", Content = "Z軸請輸入 -500000000 到 500000000 的數字", Duration = 2 })
+                return false
+            end
+            TrackConfig.OffsetZ = value
+            WindUI:Notify({ Title = "追蹤傳送", Content = "Z軸偏離已設為: " .. value, Duration = 2 })
+            return true
+        end
+        
+        -- 設定追蹤速度
+        local function SetTrackSpeed(value)
+            value = tonumber(value)
+            if not value or value < 1 or value > 10000 then
+                WindUI:Notify({ Title = "錯誤", Content = "速度請輸入 1 到 10000 的數字", Duration = 2 })
+                return false
+            end
+            TrackConfig.Speed = value
+            WindUI:Notify({ Title = "追蹤傳送", Content = "速度已設為: " .. value, Duration = 2 })
+            return true
+        end
+        
+        -- 設定循環間隔
+        local function SetCycleInterval(value)
+            value = tonumber(value)
+            if not value or value < 0.01 or value > 5 then
+                WindUI:Notify({ Title = "錯誤", Content = "間隔請輸入 0.01 到 5 的數字", Duration = 2 })
+                return false
+            end
+            CycleConfig.Interval = value
+            WindUI:Notify({ Title = "循環傳送", Content = "循環間隔已設為: " .. value .. " 秒", Duration = 2 })
+            return true
+        end
+        
+        -- 設定循環傳送 Y 軸偏離
+        local function SetCycleOffsetY(value)
+            value = tonumber(value)
+            if not value or value < -3000000000 or value > 3000000000 then
+                WindUI:Notify({ Title = "錯誤", Content = "Y軸請輸入 -5000 到 5000 的數字", Duration = 2 })
+                return false
+            end
+            CycleConfig.OffsetY = value
+            WindUI:Notify({ Title = "循環傳送", Content = "循環 Y 軸偏離已設為: " .. value, Duration = 2 })
+            return true
+        end
+        
+        -- 穿牆功能
+        local function SaveOriginalCollision()
+            local character = LocalPlayer.Character
+            if not character then return false end
+            
+            originalCollisionStates = {}
+            
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    originalCollisionStates[part] = {
+                        part = part,
+                        canCollide = part.CanCollide
+                    }
+                end
+            end
+            
+            return true
+        end
+        
+        local function RestoreOriginalCollision()
+            local character = LocalPlayer.Character
+            if not character then 
+                originalCollisionStates = {}
+                return 
+            end
+            
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    pcall(function()
+                        part.CanCollide = true
+                    end)
+                end
+            end
+            
+            for _, data in pairs(originalCollisionStates) do
+                local part = data.part
+                if part and part.Parent and part:IsA("BasePart") then
+                    pcall(function()
+                        part.CanCollide = data.canCollide
+                    end)
+                end
+            end
+            
+            originalCollisionStates = {}
+        end
+        
+        local function EnableNoClip()
+            local character = LocalPlayer.Character
+            if not character then return end
+            
+            SaveOriginalCollision()
+            
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    pcall(function()
+                        part.CanCollide = false
+                    end)
+                end
+            end
+        end
+        
+        local function DisableNoClip()
+            RestoreOriginalCollision()
+        end
+        
+        -- 追蹤傳送循環
+        local function TrackPlayer(target)
+            EnableNoClip()
+            
+            while TrackConfig.Enabled and target and target.Parent do
+                task.wait(0.03)
+                
+                local character = LocalPlayer.Character
+                if not character then break end
+                
+                for _, part in ipairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        pcall(function()
+                            part.CanCollide = false
+                        end)
+                    end
+                end
+                
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                local targetChar = target.Character
+                if not targetChar then break end
+                
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if not hrp or not targetRoot then break end
+                
+                local targetPos = targetRoot.Position
+                local offsetPos = Vector3.new(
+                    targetPos.X + TrackConfig.OffsetX,
+                    targetPos.Y + TrackConfig.OffsetY,
+                    targetPos.Z + TrackConfig.OffsetZ
+                )
+                
+                local currentPos = hrp.Position
+                local distance = (offsetPos - currentPos).Magnitude
+                
+                if distance < 1 then
+                    hrp.CFrame = CFrame.new(offsetPos)
+                else
+                    local direction = (offsetPos - currentPos).Unit
+                    local moveDistance = TrackConfig.Speed * 0.03
+                    
+                    if moveDistance >= distance then
+                        hrp.CFrame = CFrame.new(offsetPos)
+                    else
+                        local newPos = currentPos + direction * moveDistance
+                        hrp.CFrame = CFrame.new(newPos)
+                    end
+                end
+                
+                hrp.Velocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.PlatformStand = true
+                    humanoid.AutoRotate = false
+                end
+                
+                local lookDir = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(hrp.Position.X, 0, hrp.Position.Z)).Unit
+                if lookDir.Magnitude > 0.1 then
+                    hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + lookDir)
+                end
+            end
+            
+            DisableNoClip()
+            
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.PlatformStand = false
+                    humanoid.AutoRotate = true
+                end
+                
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.Velocity = Vector3.zero
+                    hrp.RotVelocity = Vector3.zero
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    hrp.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+            
+            TrackConfig.Enabled = false
+            TrackConfig.TrackThread = nil
+            TrackConfig.Target = nil
+            
+            if trackButton then
+                trackButton:SetTitle("開啟追蹤傳送")
+            end
+        end
+        
+        -- 開始追蹤傳送
+        local function StartTrackPlayer(player)
+            if not player or player == LocalPlayer then
+                WindUI:Notify({ Title = "追蹤傳送", Content = "請選擇有效的玩家", Duration = 2 })
+                return false
+            end
+            
+            if TrackConfig.Enabled then
+                StopTrackPlayer()
+                task.wait(0.1)
+            end
+            
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.PlatformStand = true
+                    humanoid.AutoRotate = false
+                end
+            end
+            
+            TrackConfig.Enabled = true
+            TrackConfig.Target = player
+            
+            TrackConfig.TrackThread = task.spawn(TrackPlayer, player)
+            
+            WindUI:Notify({ 
+                Title = "追蹤傳送", 
+                Content = string.format("開始追蹤 %s (速度:%d 偏離: X:%d Y:%d Z:%d) - 穿牆已開啟", 
+                    player.Name, TrackConfig.Speed, TrackConfig.OffsetX, TrackConfig.OffsetY, TrackConfig.OffsetZ), 
+                Duration = 3 
+            })
+            
+            if trackButton then
+                trackButton:SetTitle("關閉追蹤傳送")
+            end
+            
+            return true
+        end
+        
+        -- 停止追蹤傳送
+        local function StopTrackPlayer()
+            TrackConfig.Enabled = false
+            if TrackConfig.TrackThread then
+                task.cancel(TrackConfig.TrackThread)
+                TrackConfig.TrackThread = nil
+            end
+            TrackConfig.Target = nil
+            
+            DisableNoClip()
+            
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.PlatformStand = false
+                    humanoid.AutoRotate = true
+                end
+                
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.Velocity = Vector3.zero
+                    hrp.RotVelocity = Vector3.zero
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    hrp.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+            
+            WindUI:Notify({ Title = "追蹤傳送", Content = "已停止追蹤 (碰撞已恢復)", Duration = 2 })
+            
+            if trackButton then
+                trackButton:SetTitle("開啟追蹤傳送")
+            end
+        end
+        
+        -- 直接傳送循環
+        local function InstantTeleportToPlayer(target)
+            local runConnection
+            runConnection = RunService.Heartbeat:Connect(function()
+                if not InstantConfig.Enabled or not target or not target.Parent then
+                    if runConnection then
+                        runConnection:Disconnect()
+                    end
+                    return
+                end
+                
+                local character = LocalPlayer.Character
+                if not character then return end
+                
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                local targetChar = target.Character
+                if not targetChar then return end
+                
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if not hrp or not targetRoot then return end
+                
+                local targetPos = targetRoot.Position
+                local offsetPos = Vector3.new(
+                    targetPos.X + TrackConfig.OffsetX,
+                    targetPos.Y + TrackConfig.OffsetY,
+                    targetPos.Z + TrackConfig.OffsetZ
+                )
+                
+                hrp.CFrame = CFrame.new(offsetPos)
+                hrp.Velocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+            end)
+            
+            InstantConfig.TeleportConnection = runConnection
+        end
+        
+        -- 開始直接傳送
+        local function StartInstantTeleport(player)
+            if not player or player == LocalPlayer then
+                WindUI:Notify({ Title = "直接傳送", Content = "請選擇有效的玩家", Duration = 2 })
+                return false
+            end
+            
+            if InstantConfig.Enabled then
+                StopInstantTeleport()
+                task.wait(0.1)
+            end
+            
+            InstantConfig.Enabled = true
+            InstantConfig.Target = player
+            
+            InstantTeleportToPlayer(player)
+            
+            WindUI:Notify({ 
+                Title = "直接傳送", 
+                Content = string.format("開始直接傳送到 %s 的位置 (偏離: X:%d Y:%d Z:%d)", 
+                    player.Name, TrackConfig.OffsetX, TrackConfig.OffsetY, TrackConfig.OffsetZ), 
+                Duration = 3 
+            })
+            
+            if instantButton then
+                instantButton:SetTitle("關閉直接傳送")
+            end
+            
+            return true
+        end
+        
+        -- 停止直接傳送
+        local function StopInstantTeleport()
+            InstantConfig.Enabled = false
+            if InstantConfig.TeleportConnection then
+                InstantConfig.TeleportConnection:Disconnect()
+                InstantConfig.TeleportConnection = nil
+            end
+            InstantConfig.Target = nil
+            
+            WindUI:Notify({ Title = "直接傳送", Content = "已停止傳送", Duration = 2 })
+            
+            if instantButton then
+                instantButton:SetTitle("開啟直接傳送")
+            end
+        end
+        
+        -- 單次傳送
+        local function PerformSingleTeleport(player)
+            if not player or player == LocalPlayer then
+                WindUI:Notify({ Title = "單次傳送", Content = "請選擇有效的玩家", Duration = 2 })
+                return false
+            end
+            
+            local character = LocalPlayer.Character
+            if not character then
+                WindUI:Notify({ Title = "單次傳送", Content = "找不到角色", Duration = 2 })
+                return false
+            end
+            
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+            if not hrp then
+                WindUI:Notify({ Title = "單次傳送", Content = "找不到角色根部件", Duration = 2 })
+                return false
+            end
+            
+            local targetChar = player.Character
+            if not targetChar then
+                WindUI:Notify({ Title = "單次傳送", Content = "目標玩家沒有角色", Duration = 2 })
+                return false
+            end
+            
+            local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+            if not targetRoot then
+                WindUI:Notify({ Title = "單次傳送", Content = "目標玩家找不到根部件", Duration = 2 })
+                return false
+            end
+            
+            local targetPos = targetRoot.Position
+            local offsetPos = Vector3.new(
+                targetPos.X + TrackConfig.OffsetX,
+                targetPos.Y + TrackConfig.OffsetY,
+                targetPos.Z + TrackConfig.OffsetZ
+            )
+            
+            hrp.CFrame = CFrame.new(offsetPos)
+            hrp.Velocity = Vector3.zero
+            hrp.RotVelocity = Vector3.zero
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            
+            WindUI:Notify({ 
+                Title = "單次傳送", 
+                Content = string.format("已傳送到 %s 的位置 (偏離: X:%d Y:%d Z:%d)", 
+                    player.Name, TrackConfig.OffsetX, TrackConfig.OffsetY, TrackConfig.OffsetZ), 
+                Duration = 2 
+            })
+            
+            return true
+        end
+        
+        -- 停止循環傳送
+        local function StopCycleTeleport()
+            CycleConfig.Enabled = false
+            if CycleConfig.CycleThread then
+                task.cancel(CycleConfig.CycleThread)
+                CycleConfig.CycleThread = nil
+            end
+            
+            if cycleButton then
+                cycleButton:SetTitle("開啟循環傳送")
+            end
+            
+            DisableNoClip()
+            
+            WindUI:Notify({ Title = "循環傳送", Content = "已停止循環傳送", Duration = 2 })
+        end
+        
+        -- 開始循環傳送
+        local function StartCycleTeleport(player)
+            if not player then return end
+            
+            if TrackConfig.Enabled then StopTrackPlayer() end
+            if InstantConfig.Enabled then StopInstantTeleport() end
+            
+            CycleConfig.Target = player
+            CycleConfig.Enabled = true
+            
+            if cycleButton then
+                cycleButton:SetTitle("停止循環傳送")
+            end
+            
+            EnableNoClip()
+            
+            CycleConfig.CycleThread = task.spawn(function()
+                while CycleConfig.Enabled do
+                    local success, err = pcall(function()
+                        local char = LocalPlayer.Character
+                        local targetChar = player.Character
+                        
+                        if char and targetChar and char:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("HumanoidRootPart") then
+                            local hrp = char.HumanoidRootPart
+                            local targetHrp = targetChar.HumanoidRootPart
+                            
+                            local function SafeTeleport(cf)
+                                hrp.Velocity = Vector3.new(0, 0, 0)
+                                char:PivotTo(cf)
+                            end
+                            
+                            local offsetCFrame = targetHrp.CFrame * CFrame.new(0, CycleConfig.OffsetY, 0)
+                            SafeTeleport(offsetCFrame)
+                            task.wait(CycleConfig.Interval)
+                            
+                            if not CycleConfig.Enabled then return end
+                            
+                            SafeTeleport(targetHrp.CFrame)
+                            task.wait(CycleConfig.Interval)
+                        else
+                            StopCycleTeleport()
+                        end
+                    end)
+                    
+                    if not success then
+                        task.wait(0.5)
+                    end
+                end
+            end)
+            
+            WindUI:Notify({ 
+                Title = "循環傳送", 
+                Content = "正在對 " .. player.Name .. " 進行循環傳送 (Y軸偏離: " .. CycleConfig.OffsetY .. ")", 
+                Duration = 2 
+            })
+        end
+        
+        -- 停止所有功能
+        local function StopAllFunctions()
+            if TrackConfig.Enabled then
+                StopTrackPlayer()
+            end
+            if InstantConfig.Enabled then
+                StopInstantTeleport()
+            end
+            if CycleConfig.Enabled then
+                StopCycleTeleport()
+            end
+        end
+        
+        -- ==================== 血量偵測配置 ====================
+        local HealthDetectConfig = {
+            Enabled = false,
+            HealthThreshold = 30,
+            SelectedLocation = "一海",
+            CheckInterval = 0.5,
+            ShowNotifications = true,
+            OnlyInCombat = false,
+            TeleportCount = 0,
+            PlayerHealthState = "NORMAL",
+            LastTeleportTime = 0,
+            TeleportTriggered = false,
+        }
+        
+        local playerHealthStates = {}
+        
+        local function resetPlayerHealthState(player)
+            if player then
+                playerHealthStates[player.UserId] = {
+                    state = "NORMAL",
+                    lastLowTime = 0,
+                    teleportTriggered = false
+                }
+            end
+        end
+        
+        local function getPlayerHealthState(player)
+            if not playerHealthStates[player.UserId] then
+                resetPlayerHealthState(player)
+            end
+            return playerHealthStates[player.UserId]
+        end
+        
+        local function updatePlayerHealthState(player, currentHealthPercent)
+            local stateData = getPlayerHealthState(player)
+            local currentTime = tick()
+            
+            if currentHealthPercent <= HealthDetectConfig.HealthThreshold then
+                if stateData.state == "NORMAL" then
+                    stateData.lastLowTime = currentTime
+                    stateData.state = "LOW"
+                    stateData.teleportTriggered = false
+                elseif stateData.state == "LOW" then
+                    if not stateData.teleportTriggered and (currentTime - stateData.lastLowTime) > 0.5 then
+                        stateData.teleportTriggered = true
+                        return "TRIGGER_TELEPORT"
+                    end
+                end
+            else
+                if stateData.state == "LOW" then
+                    stateData.state = "NORMAL"
+                    stateData.teleportTriggered = false
+                end
+            end
+            
+            return "NO_ACTION"
+        end
+        
+        local CustomX = 0
+        local CustomY = 0
+        local CustomZ = 0
+        
+        local sea2Locations = {
+            ["天鵝的房間"] = CFrame.new(-287.37, 305.81, 592.98),
+            ["豪宅"] = CFrame.new(2286.93, 15.06, 910.51),
+            ["鬼船裡"] = CFrame.new(-6501.06, 83.11, -123.52),
+            ["鬼船外"] = CFrame.new(922.78, 123.96, 32842.40)
+        }
+        
+        local sea3Locations = {
+            ["海洋城堡"] = CFrame.new(-12463.60, 376.26, -7566.08),
+            ["海龜豪宅"] = CFrame.new(-5060.41, 316.43, -3192.30),
+            ["司法"] = CFrame.new(-5096.48, 316.43, -3177.91),
+            ["九頭蛇"] = CFrame.new(-5027.03, 316.43, -3206.07),
+            ["時間神殿"] = CFrame.new(28286, 14897, 103)
+        }
+        
+        local TeleportLocations = {
+            ["一海"] = { CFrame = CFrame.new(0, 0, 0), type = "remote", remote = "TravelMain" },
+            ["二海"] = { CFrame = CFrame.new(0, 0, 0), type = "remote", remote = "TravelDressrosa" },
+            ["三海"] = { CFrame = CFrame.new(0, 0, 0), type = "remote", remote = "TravelZou" },
+            ["天鵝的房間"] = { CFrame = sea2Locations["天鵝的房間"], type = "cframe" },
+            ["豪宅"] = { CFrame = sea2Locations["豪宅"], type = "cframe" },
+            ["鬼船裡"] = { CFrame = sea2Locations["鬼船裡"], type = "cframe" },
+            ["鬼船外"] = { CFrame = sea2Locations["鬼船外"], type = "cframe" },
+            ["海洋城堡"] = { CFrame = sea3Locations["海洋城堡"], type = "cframe" },
+            ["海龜豪宅"] = { CFrame = sea3Locations["海龜豪宅"], type = "cframe" },
+            ["司法"] = { CFrame = sea3Locations["司法"], type = "cframe" },
+            ["九頭蛇"] = { CFrame = sea3Locations["九頭蛇"], type = "cframe" },
+            ["時間神殿"] = { CFrame = sea3Locations["時間神殿"], type = "cframe" },
+            ["自定義"] = { CFrame = CFrame.new(0, 0, 0), type = "custom" },
+        }
+        
+        local locationNames = {}
+        for name, _ in pairs(TeleportLocations) do
+            table.insert(locationNames, name)
+        end
+        
+        local function performHealthTeleport()
+            local character = LocalPlayer.Character
+            if not character or not character:FindFirstChild("HumanoidRootPart") then
+                return false
+            end
+            
+            local hrp = character.HumanoidRootPart
+            local location = HealthDetectConfig.SelectedLocation
+            local locationData = TeleportLocations[location]
+            
+            if not locationData then
+                return false
+            end
+            
+            local success = false
+            
+            if locationData.type == "remote" then
+                pcall(function()
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer(locationData.remote)
+                    success = true
+                end)
+            elseif locationData.type == "cframe" then
+                hrp.CFrame = locationData.CFrame
+                success = true
+            elseif locationData.type == "custom" then
+                hrp.CFrame = CFrame.new(CustomX, CustomY, CustomZ)
+                success = true
+            end
+            
+            if success then
+                HealthDetectConfig.LastTeleportTime = tick()
+                
+                if HealthDetectConfig.ShowNotifications then
+                    WindUI:Notify({
+                        Title = "⚠️ 血量危急 ⚠️",
+                        Content = string.format("血量低於 %d%%，自動傳送至 %s", 
+                            HealthDetectConfig.HealthThreshold, 
+                            location),
+                        Duration = 5,
+                        Icon = "heart"
+                    })
+                end
+                
+                return true
+            end
+            
+            return false
+        end
+        
+        local function resetAllHealthStates()
+            playerHealthStates = {}
+            HealthDetectConfig.TeleportCount = 0
+            HealthDetectConfig.PlayerHealthState = "NORMAL"
+            HealthDetectConfig.TeleportTriggered = false
+        end
+        
+        local function startHealthDetection()
+            task.spawn(function()
+                while HealthDetectConfig.Enabled do
+                    task.wait(HealthDetectConfig.CheckInterval)
+                    
+                    local character = LocalPlayer.Character
+                    if not character then continue end
+                    
+                    local humanoid = character:FindFirstChildOfClass("Humanoid")
+                    if not humanoid or humanoid.Health <= 0 then continue end
+                    
+                    local healthPercent = (humanoid.Health / humanoid.MaxHealth) * 100
+                    
+                    if HealthDetectConfig.OnlyInCombat then
+                        local inCombat = false
+                        if not inCombat then continue end
+                    end
+                    
+                    local action = updatePlayerHealthState(LocalPlayer, healthPercent)
+                    
+                    if action == "TRIGGER_TELEPORT" then
+                        performHealthTeleport()
+                    end
+                end
+            end)
+        end
+        
+        -- ==================== 玩家列表管理 ====================
+        
+        local function RefreshPlayerList()
+            WindUI:Notify({ 
+                Title = "玩家列表", 
+                Content = "正在重新載入...", 
+                Duration = 1 
+            })
+            
+            local newPlayerList = {}
+            local newPlayerMap = {}
+            
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    table.insert(newPlayerList, player.Name)
+                    newPlayerMap[player.Name] = player
+                end
+            end
+            
+            playerList = newPlayerList
+            playerMap = newPlayerMap
+            
+            if TrackConfig.Enabled or InstantConfig.Enabled then
+                StopAllFunctions()
+            end
+            
+            if playerDropdown then
+                if #playerList > 0 then
+                    playerDropdown:Refresh(playerList)
+                    pcall(function()
+                        playerDropdown:SetValue("請選擇玩家")
+                    end)
+                else
+                    playerDropdown:Refresh({"目前沒有其他玩家"})
+                    pcall(function()
+                        playerDropdown:SetValue("目前沒有其他玩家")
+                    end)
+                end
+            end
+            
+            WindUI:Notify({ 
+                Title = "玩家列表", 
+                Content = #playerList > 0 and 
+                    ("重新載入成功，找到 " .. #playerList .. " 位玩家") 
+                    or "目前沒有其他玩家在線", 
+                Duration = 2 
+            })
+        end
+        
+        local function CheckTargetPlayer()
+            if not selectedPlayer or not playerMap[selectedPlayer.Name] then
+                WindUI:Notify({ 
+                    Title = "提示", 
+                    Content = "目標玩家不存在，請重新選擇", 
+                    Duration = 3 
+                })
+                selectedPlayer = nil
+                return false
+            end
+            return true
+        end
+        
+        local function StartTargetCheckLoop()
+            task.spawn(function()
+                while true do
+                    task.wait(2)
+                    
+                    if TrackConfig.Enabled and TrackConfig.Target then
+                        local targetStillExists = false
+                        for _, player in ipairs(Players:GetPlayers()) do
+                            if player == TrackConfig.Target then
+                                targetStillExists = true
+                                break
+                            end
+                        end
+                        
+                        if not targetStillExists then
+                            WindUI:Notify({ 
+                                Title = "目標離開", 
+                                Content = "追蹤目標已離開遊戲，自動關閉傳送", 
+                                Duration = 3,
+                                Icon = "info"
+                            })
+                            StopTrackPlayer()
+                            selectedPlayer = nil
+                        end
+                    end
+                    
+                    if InstantConfig.Enabled and InstantConfig.Target then
+                        local targetStillExists = false
+                        for _, player in ipairs(Players:GetPlayers()) do
+                            if player == InstantConfig.Target then
+                                targetStillExists = true
+                                break
+                            end
+                        end
+                        
+                        if not targetStillExists then
+                            WindUI:Notify({ 
+                                Title = "目標離開", 
+                                Content = "傳送目標已離開遊戲，自動關閉傳送", 
+                                Duration = 3,
+                                Icon = "info"
+                            })
+                            StopInstantTeleport()
+                            selectedPlayer = nil
+                        end
+                    end
+                    
+                    if CycleConfig.Enabled and CycleConfig.Target then
+                        local targetStillExists = false
+                        for _, player in ipairs(Players:GetPlayers()) do
+                            if player == CycleConfig.Target then
+                                targetStillExists = true
+                                break
+                            end
+                        end
+                        
+                        if not targetStillExists then
+                            WindUI:Notify({ 
+                                Title = "目標離開", 
+                                Content = "循環傳送目標已離開遊戲，自動關閉傳送", 
+                                Duration = 3,
+                                Icon = "info"
+                            })
+                            StopCycleTeleport()
+                            selectedPlayer = nil
+                        end
+                    end
+                end
+            end)
+        end
+        
+        LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+            task.wait(1)
+            originalCollisionStates = {}
+            
+            if TrackConfig.Enabled and TrackConfig.Target then
+                StartTrackPlayer(TrackConfig.Target)
+            end
+            
+            if InstantConfig.Enabled and InstantConfig.Target then
+                StartInstantTeleport(InstantConfig.Target)
+            end
+            
+            if CycleConfig.Enabled and CycleConfig.Target then
+                StartCycleTeleport(CycleConfig.Target)
+            end
+        end)
+        
+        -- ===================== 傳送標籤頁 UI =====================
+        
+        if Tabs and Tabs.TeleportTab then
+            
+            playerList = {}
+            playerMap = {}
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    table.insert(playerList, player.Name)
+                    playerMap[player.Name] = player
+                end
+            end
+            
+            refreshButton = Tabs.TeleportTab:Button({
+                Title = "重新載入玩家列表",
+                Callback = RefreshPlayerList
+            })
+            
+            if #playerList > 0 then
+                playerDropdown = Tabs.TeleportTab:Dropdown({
+                    Title = "選擇目標玩家",
+                    Values = playerList,
+                    Value = "請選擇玩家",
+                    Callback = function(selected)
+                        if selected ~= "請選擇玩家" and selected ~= "目前沒有其他玩家" then
+                            selectedPlayer = playerMap[selected]
+                            
+                            if TrackConfig.Enabled or InstantConfig.Enabled then
+                                WindUI:Notify({ 
+                                    Title = "提示", 
+                                    Content = "已切換目標玩家，請重新開啟功能", 
+                                    Duration = 3 
+                                })
+                                StopAllFunctions()
+                            end
+                        else
+                            selectedPlayer = nil
+                        end
+                    end
+                })
+            else
+                playerDropdown = Tabs.TeleportTab:Dropdown({
+                    Title = "選擇目標玩家",
+                    Values = {"目前沒有其他玩家"},
+                    Value = "目前沒有其他玩家",
+                    Callback = function(selected)
+                        selectedPlayer = nil
+                    end
+                })
+            end
+            
+            StartTargetCheckLoop()
+            
+            Tabs.TeleportTab:Divider()
+            
+            local speedInput = Tabs.TeleportTab:Input({
+                Title = "追蹤速度",
+                Value = tostring(TrackConfig.Speed),
+                Placeholder = "輸入速度值",
+                Callback = function(value)
+                    SetTrackSpeed(value)
+                end
+            })
+            
+            local offsetXInput = Tabs.TeleportTab:Input({
+                Title = "X軸偏離",
+                Value = tostring(TrackConfig.OffsetX),
+                Placeholder = "輸入X軸偏離值",
+                Callback = function(value)
+                    SetOffsetX(value)
+                end
+            })
+            
+            local offsetYInput = Tabs.TeleportTab:Input({
+                Title = "Y軸偏離",
+                Value = tostring(TrackConfig.OffsetY),
+                Placeholder = "輸入Y軸偏離值",
+                Callback = function(value)
+                    SetOffsetY(value)
+                end
+            })
+            
+            local offsetZInput = Tabs.TeleportTab:Input({
+                Title = "Z軸偏離",
+                Value = tostring(TrackConfig.OffsetZ),
+                Placeholder = "輸入Z軸偏離值",
+                Callback = function(value)
+                    SetOffsetZ(value)
+                end
+            })
+            
+            trackButton = Tabs.TeleportTab:Button({
+                Title = "開啟追蹤傳送",
+                Callback = function()
+                    if TrackConfig.Enabled then
+                        StopTrackPlayer()
+                    else
+                        if not selectedPlayer then
+                            WindUI:Notify({ 
+                                Title = "追蹤傳送", 
+                                Content = "請先選擇目標玩家", 
+                                Duration = 3,
+                                Icon = "alert-triangle"
+                            })
+                            return
+                        end
+                        
+                        if not CheckTargetPlayer() then
+                            return
+                        end
+                        
+                        if InstantConfig.Enabled then
+                            StopInstantTeleport()
+                        end
+                        
+                        StartTrackPlayer(selectedPlayer)
+                    end
+                end
+            })
+            
+            Tabs.TeleportTab:Divider()
+            
+            instantButton = Tabs.TeleportTab:Button({
+                Title = "開啟直接傳送",
+                Callback = function()
+                    if InstantConfig.Enabled then
+                        StopInstantTeleport()
+                    else
+                        if not selectedPlayer then
+                            WindUI:Notify({ 
+                                Title = "直接傳送", 
+                                Content = "請先選擇目標玩家", 
+                                Duration = 3,
+                                Icon = "alert-triangle"
+                            })
+                            return
+                        end
+                        
+                        if not CheckTargetPlayer() then
+                            return
+                        end
+                        
+                        if TrackConfig.Enabled then
+                            StopTrackPlayer()
+                        end
+                        
+                        StartInstantTeleport(selectedPlayer)
+                    end
+                end
+            })
+            
+            singleButton = Tabs.TeleportTab:Button({
+                Title = "單次傳送 (使用追蹤設定)",
+                Callback = function()
+                    if not selectedPlayer then
+                        WindUI:Notify({ 
+                            Title = "單次傳送", 
+                            Content = "請先選擇目標玩家", 
+                            Duration = 3,
+                            Icon = "alert-triangle"
+                        })
+                        return
+                    end
+                    
+                    if not CheckTargetPlayer() then
+                        return
+                    end
+                    
+                    PerformSingleTeleport(selectedPlayer)
+                end
+            })
+            
+            Tabs.TeleportTab:Divider()
+            
+            Tabs.TeleportTab:Input({
+                Title = "循環 Y 軸偏離",
+                Value = tostring(CycleConfig.OffsetY),
+                Placeholder = "輸入 Y 軸偏離值",
+                Callback = function(value)
+                    SetCycleOffsetY(value)
+                end
+            })
+            
+            Tabs.TeleportTab:Input({
+                Title = "循環切換間隔 (秒)",
+                Value = tostring(CycleConfig.Interval),
+                Placeholder = "輸入秒數 (例: 0.1)",
+                Callback = function(value)
+                    SetCycleInterval(value)
+                end
+            })
+            
+            cycleButton = Tabs.TeleportTab:Button({
+                Title = "開啟循環傳送",
+                Callback = function()
+                    if CycleConfig.Enabled then
+                        StopCycleTeleport()
+                    else
+                        if not selectedPlayer then
+                            WindUI:Notify({ 
+                                Title = "循環傳送", 
+                                Content = "請先選擇目標玩家", 
+                                Duration = 3,
+                                Icon = "alert-triangle"
+                            })
+                            return
+                        end
+                        
+                        if not CheckTargetPlayer() then
+                            return
+                        end
+                        
+                        if TrackConfig.Enabled then StopTrackPlayer() end
+                        if InstantConfig.Enabled then StopInstantTeleport() end
+                        
+                        StartCycleTeleport(selectedPlayer)
+                    end
+                end
+            })
+            
+            Tabs.TeleportTab:Divider()
+            
+            Tabs.TeleportTab:Button({
+                Title = "傳送至一海",
+                Callback = function()
+                    pcall(function()
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("TravelMain")
+                        WindUI:Notify({ Title = "傳送", Content = "正在傳送至一海", Duration = 2 })
+                    end)
+                end
+            })
+            
+            Tabs.TeleportTab:Button({
+                Title = "傳送至二海",
+                Callback = function()
+                    pcall(function()
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("TravelDressrosa")
+                        WindUI:Notify({ Title = "傳送", Content = "正在傳送至二海", Duration = 2 })
+                    end)
+                end
+            })
+            
+            Tabs.TeleportTab:Button({
+                Title = "傳送至三海",
+                Callback = function()
+                    pcall(function()
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("TravelZou")
+                        WindUI:Notify({ Title = "傳送", Content = "正在傳送至三海", Duration = 2 })
+                    end)
+                end
+            })
+            
+            Tabs.TeleportTab:Divider()
+            
+            for name, cf in pairs(sea2Locations) do
+                Tabs.TeleportTab:Button({
+                    Title = "傳送至" .. name,
+                    Callback = function()
+                        local char = LocalPlayer.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            char.HumanoidRootPart.CFrame = cf
+                            WindUI:Notify({ Title = "傳送", Content = "已傳送至" .. name, Duration = 2 })
+                        end
+                    end
+                })
+            end
+            
+            Tabs.TeleportTab:Divider()
+            
+            for name, cf in pairs(sea3Locations) do
+                Tabs.TeleportTab:Button({
+                    Title = "傳送至" .. name,
+                    Callback = function()
+                        local char = LocalPlayer.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            char.HumanoidRootPart.CFrame = cf
+                            WindUI:Notify({ Title = "傳送", Content = "已傳送至" .. name, Duration = 2 })
+                        end
+                    end
+                })
+            end
+            
+            -- ===================== 血量自動偵測傳送系統 =====================
+            Tabs.TeleportTab:Divider()
+            
+            Tabs.TeleportTab:Toggle({
+                Title = "血量自動偵測傳送",
+                Value = false,
+                Callback = function(state)
+                    HealthDetectConfig.Enabled = state
+                    if state then
+                        resetAllHealthStates()
+                        startHealthDetection()
+                        WindUI:Notify({
+                            Title = "血量偵測",
+                            Content = "已開啟 - 低血量 → 恢復 → 再次低血量才會觸發（無冷卻）",
+                            Duration = 4
+                        })
+                    else
+                        resetAllHealthStates()
+                        WindUI:Notify({
+                            Title = "血量偵測",
+                            Content = "已關閉",
+                            Duration = 2
+                        })
+                    end
+                end
+            })
+            
+            Tabs.TeleportTab:Slider({
+                Title = "血量閾值 (%)",
+                Value = { Min = 1, Max = 100, Default = 30 },
+                Callback = function(value)
+                    HealthDetectConfig.HealthThreshold = value
+                    resetAllHealthStates()
+                    WindUI:Notify({
+                        Title = "血量閾值",
+                        Content = "已設置為: " .. value .. "%",
+                        Duration = 2
+                    })
+                end
+            })
+            
+            Tabs.TeleportTab:Dropdown({
+                Title = "選擇傳送地點",
+                Values = locationNames,
+                Value = "一海",
+                Callback = function(selected)
+                    HealthDetectConfig.SelectedLocation = selected
+                    HealthDetectConfig.TeleportCount = 0
+                    resetAllHealthStates()
+                    WindUI:Notify({
+                        Title = "傳送地點",
+                        Content = "已選擇: " .. selected,
+                        Duration = 3
+                    })
+                end
+            })
+            
+            Tabs.TeleportTab:Input({
+                Title = "自定義 X 座標",
+                Value = "0",
+                Placeholder = "輸入X座標",
+                Callback = function(value)
+                    local x = tonumber(value)
+                    if x then CustomX = x end
+                end
+            })
+            
+            Tabs.TeleportTab:Input({
+                Title = "自定義 Y 座標",
+                Value = "0",
+                Placeholder = "輸入Y座標",
+                Callback = function(value)
+                    local y = tonumber(value)
+                    if y then CustomY = y end
+                end
+            })
+            
+            Tabs.TeleportTab:Input({
+                Title = "自定義 Z 座標",
+                Value = "0",
+                Placeholder = "輸入Z座標",
+                Callback = function(value)
+                    local z = tonumber(value)
+                    if z then CustomZ = z end
+                end
+            })
+            
+            Tabs.TeleportTab:Button({
+                Title = "獲取當前位置",
+                Callback = function()
+                    local character = LocalPlayer.Character
+                    if character and character:FindFirstChild("HumanoidRootPart") then
+                        local pos = character.HumanoidRootPart.Position
+                        CustomX = math.floor(pos.X)
+                        CustomY = math.floor(pos.Y)
+                        CustomZ = math.floor(pos.Z)
+                        WindUI:Notify({
+                            Title = "當前位置",
+                            Content = string.format("X: %d, Y: %d, Z: %d", CustomX, CustomY, CustomZ),
+                            Duration = 3
+                        })
+                    end
+                end
+            })
+            
+            Tabs.TeleportTab:Toggle({
+                Title = "僅在戰鬥中觸發",
+                Value = false,
+                Callback = function(state)
+                    HealthDetectConfig.OnlyInCombat = state
+                end
+            })
+        end
+        
+-- ===================== 功能2標籤頁（完整整合版）=====================
+-- 此分頁整合了：自動變身大佛、聚怪、免控旋轉、碰撞箱修改等所有輔助功能
+
+-- 使用全局變數來存儲狀態，避免重複定義
+_G.ActivityFunctions = _G.ActivityFunctions or {}
+
+-- ===================== 自動變身大佛＋拿刀 =====================
+_G.ActivityFunctions.AUTO_BUDDHA_ENABLED = false
+local CHECK_INTERVAL = 5
+local BUDDHA_SLOT = 2
+local SWORD_SLOT = 3
+local BUDDHA_MIN_SIZE = 20.0
+
+local ALL_SWORDS = {
+    "True Triple Katana", "Hallow Scythe", "Dark Blade", "Cursed Dual Katana",
+    "Rengoku", "Saber", "Saishi", "Shark Anchor", "Spikey Trident",
+    "Tushita", "Yama", "Dragonheart"
+}
+
+local SWORDS_TABLE = {}
+for _, sword in ipairs(ALL_SWORDS) do
+    SWORDS_TABLE[sword] = true
+end
+
+local function isBuddhaForm()
+    local character = LocalPlayer.Character
+    if not character then return false end
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return false end
+    local sizeMagnitude = humanoidRootPart.Size.Magnitude
+    return sizeMagnitude > BUDDHA_MIN_SIZE
+end
+
+local function pressNumberKey(number)
+    local virtualInput = game:GetService("VirtualInputManager")
+    local keyCode
+    if number == 1 then keyCode = Enum.KeyCode.One
+    elseif number == 2 then keyCode = Enum.KeyCode.Two
+    elseif number == 3 then keyCode = Enum.KeyCode.Three
+    elseif number == 4 then keyCode = Enum.KeyCode.Four
+    elseif number == 5 then keyCode = Enum.KeyCode.Five
+    elseif number == 6 then keyCode = Enum.KeyCode.Six
+    elseif number == 7 then keyCode = Enum.KeyCode.Seven
+    elseif number == 8 then keyCode = Enum.KeyCode.Eight
+    else keyCode = Enum.KeyCode.Nine end
+    virtualInput:SendKeyEvent(true, keyCode, false, nil)
+    task.wait(0.05)
+    virtualInput:SendKeyEvent(false, keyCode, false, nil)
+end
+
+local function pressZKey()
+    local virtualInput = game:GetService("VirtualInputManager")
+    virtualInput:SendKeyEvent(true, Enum.KeyCode.Z, false, nil)
+    task.wait(0.1)
+    virtualInput:SendKeyEvent(false, Enum.KeyCode.Z, false, nil)
+end
+
+local function hasAnySwordEquipped()
+    local character = LocalPlayer.Character
+    if not character then return false, nil end
+    for _, child in ipairs(character:GetChildren()) do
+        if child:IsA("Tool") and SWORDS_TABLE[child.Name] then
+            return true, child.Name
+        end
+    end
+    return false, nil
+end
+
+local function equipSword()
+    pressNumberKey(SWORD_SLOT)
+    task.wait(0.3)
+    local hasSword, swordName = hasAnySwordEquipped()
+    if hasSword then
+        return true, swordName
+    end
+    task.wait(0.5)
+    return hasAnySwordEquipped()
+end
+
+local function performBuddhaTransformation()
+    local character = LocalPlayer.Character
+    if not character then return false end
+    pressNumberKey(BUDDHA_SLOT)
+    task.wait(0.5)
+    pressZKey()
+    local waitTime = 0
+    local maxWaitTime = 3
+    while waitTime < maxWaitTime do
+        task.wait(0.1)
+        waitTime = waitTime + 0.1
+        if isBuddhaForm() then
+            return true
+        end
+    end
+    return false
+end
+
+_G.ActivityFunctions.buddhaTask = nil
+local function startBuddhaLoop()
+    if _G.ActivityFunctions.buddhaTask then
+        task.cancel(_G.ActivityFunctions.buddhaTask)
+        _G.ActivityFunctions.buddhaTask = nil
+    end
+    _G.ActivityFunctions.buddhaTask = task.spawn(function()
+        local lastCheckTime = 0
+        while _G.ActivityFunctions.AUTO_BUDDHA_ENABLED do
+            task.wait(1)
+            local currentTime = tick()
+            if currentTime - lastCheckTime >= CHECK_INTERVAL then
+                lastCheckTime = currentTime
+                if LocalPlayer.Character then
+                    if isBuddhaForm() then
+                        local hasSword = hasAnySwordEquipped()
+                        if not hasSword then
+                            equipSword()
+                        end
+                    else
+                        local success = performBuddhaTransformation()
+                        if success then
+                            task.wait(0.5)
+                            local hasSword = hasAnySwordEquipped()
+                            if not hasSword then
+                                equipSword()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        _G.ActivityFunctions.buddhaTask = nil
+    end)
+end
+
+-- ===================== 簡化版聚怪功能 =====================
+_G.ActivityFunctions.SimpleBringMob = {
+    Enabled = false,
+    Distance = 100000,
+}
+
+local function SetBringDistance(value)
+    local dist = tonumber(value)
+    if dist and dist > 0 then
+        _G.ActivityFunctions.SimpleBringMob.Distance = dist
+        if WindUI then
+            WindUI:Notify({ 
+                Title = "聚怪範圍", 
+                Content = string.format("已設定為: %d", dist), 
+                Duration = 2 
+            })
+        end
+        return true
+    else
+        if WindUI then
+            WindUI:Notify({ 
+                Title = "錯誤", 
+                Content = "請輸入有效的正數", 
+                Duration = 2 
+            })
+        end
+        return false
+    end
+end
+
+_G.ActivityFunctions.simpleBringMobLoop = nil
+local function StartSimpleBringMob()
+    if _G.ActivityFunctions.simpleBringMobLoop then
+        task.cancel(_G.ActivityFunctions.simpleBringMobLoop)
+        _G.ActivityFunctions.simpleBringMobLoop = nil
+    end
+    
+    _G.ActivityFunctions.simpleBringMobLoop = task.spawn(function()
+        while _G.ActivityFunctions.SimpleBringMob.Enabled do
+            task.wait(0.1)
+            
+            pcall(function()
+                local MyCharacter = LocalPlayer.Character
+                if not MyCharacter then return end
+                
+                local MyRoot = MyCharacter:FindFirstChild("HumanoidRootPart")
+                if not MyRoot then return end
+                
+                local lookVector = MyRoot.CFrame.LookVector
+                local targetPos = MyRoot.Position + (lookVector * 2)
+                local targetCFrame = CFrame.new(targetPos)
+                
+                local Enemies = workspace:FindFirstChild("Enemies")
+                if not Enemies then return end
+                
+                for _, v in pairs(Enemies:GetChildren()) do
+                    local hrp = v:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        local distance = (hrp.Position - MyRoot.Position).Magnitude
+                        
+                        if distance <= _G.ActivityFunctions.SimpleBringMob.Distance then
+                            hrp.CFrame = targetCFrame
+                        end
+                    end
+                end
+            end)
+        end
+        _G.ActivityFunctions.simpleBringMobLoop = nil
+    end)
+end
+
+local function StopSimpleBringMob()
+    _G.ActivityFunctions.SimpleBringMob.Enabled = false
+    if _G.ActivityFunctions.simpleBringMobLoop then
+        task.cancel(_G.ActivityFunctions.simpleBringMobLoop)
+        _G.ActivityFunctions.simpleBringMobLoop = nil
+    end
+    if WindUI then
+        WindUI:Notify({ 
+            Title = "聚怪功能", 
+            Content = "已關閉", 
+            Duration = 2 
+        })
+    end
+end
+
+-- ===================== 免控旋轉功能 =====================
+_G.ActivityFunctions.ROTATION_CONFIG = {
+    Enabled = false,
+    RotationSpeed = 2000,
+}
+
+_G.ActivityFunctions.rotationActive = false
+_G.ActivityFunctions.rotationConnection = nil
+_G.ActivityFunctions.moveKeys = {W=false, A=false, S=false, D=false}
+_G.ActivityFunctions.jumpHoldRot = false
+_G.ActivityFunctions.currentYaw = 0
+_G.ActivityFunctions.rotationInputBegan = nil
+_G.ActivityFunctions.rotationInputEnded = nil
+
+local function setupRotationInput()
+    if _G.ActivityFunctions.rotationInputBegan then
+        _G.ActivityFunctions.rotationInputBegan:Disconnect()
+        _G.ActivityFunctions.rotationInputBegan = nil
+    end
+    if _G.ActivityFunctions.rotationInputEnded then
+        _G.ActivityFunctions.rotationInputEnded:Disconnect()
+        _G.ActivityFunctions.rotationInputEnded = nil
+    end
+    
+    _G.ActivityFunctions.rotationInputBegan = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if not _G.ActivityFunctions.ROTATION_CONFIG.Enabled then return end
+        
+        if input.KeyCode == Enum.KeyCode.W then _G.ActivityFunctions.moveKeys.W = true end
+        if input.KeyCode == Enum.KeyCode.A then _G.ActivityFunctions.moveKeys.A = true end
+        if input.KeyCode == Enum.KeyCode.S then _G.ActivityFunctions.moveKeys.S = true end
+        if input.KeyCode == Enum.KeyCode.D then _G.ActivityFunctions.moveKeys.D = true end
+        if input.KeyCode == Enum.KeyCode.Space then _G.ActivityFunctions.jumpHoldRot = true end
+    end)
+
+    _G.ActivityFunctions.rotationInputEnded = UserInputService.InputEnded:Connect(function(input, gameProcessed)
+        if input.KeyCode == Enum.KeyCode.W then _G.ActivityFunctions.moveKeys.W = false end
+        if input.KeyCode == Enum.KeyCode.A then _G.ActivityFunctions.moveKeys.A = false end
+        if input.KeyCode == Enum.KeyCode.S then _G.ActivityFunctions.moveKeys.S = false end
+        if input.KeyCode == Enum.KeyCode.D then _G.ActivityFunctions.moveKeys.D = false end
+        if input.KeyCode == Enum.KeyCode.Space then _G.ActivityFunctions.jumpHoldRot = false end
+    end)
+end
+
+local function startRotation()
+    if _G.ActivityFunctions.rotationActive then return end
+    
+    local character = LocalPlayer.Character
+    if not character then 
+        if WindUI then WindUI:Notify({ Title = "免控旋轉", Content = "找不到角色", Duration = 2 }) end
+        return 
+    end
+    
+    local root = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    
+    if not root or not humanoid then 
+        if WindUI then WindUI:Notify({ Title = "免控旋轉", Content = "角色組件不完整", Duration = 2 }) end
+        return 
+    end
+    
+    humanoid.AutoRotate = false
+    _G.ActivityFunctions.rotationActive = true
+    _G.ActivityFunctions.currentYaw = root.Orientation.Y
+    setupRotationInput()
+    
+    _G.ActivityFunctions.rotationConnection = RunService.Heartbeat:Connect(function(dt)
+        if not _G.ActivityFunctions.ROTATION_CONFIG.Enabled or not _G.ActivityFunctions.rotationActive then return end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local rootPart = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        if not rootPart or not hum then return end
+        if hum.Health <= 0 then return end
+        
+        _G.ActivityFunctions.currentYaw = _G.ActivityFunctions.currentYaw + _G.ActivityFunctions.ROTATION_CONFIG.RotationSpeed * dt
+        
+        local camCFrame = workspace.CurrentCamera.CFrame
+        local camLook = Vector3.new(camCFrame.LookVector.X, 0, camCFrame.LookVector.Z)
+        local camRight = Vector3.new(camCFrame.RightVector.X, 0, camCFrame.RightVector.Z)
+        
+        local direction = Vector3.new(0, 0, 0)
+        if _G.ActivityFunctions.moveKeys.W then direction = direction + camLook end
+        if _G.ActivityFunctions.moveKeys.S then direction = direction - camLook end
+        if _G.ActivityFunctions.moveKeys.A then direction = direction - camRight end
+        if _G.ActivityFunctions.moveKeys.D then direction = direction + camRight end
+        
+        if direction.Magnitude > 0 then
+            hum:Move(direction.Unit, false)
+        else
+            hum:Move(Vector3.new(0,0,0), false)
+        end
+        
+        if _G.ActivityFunctions.jumpHoldRot and hum:GetState() ~= Enum.HumanoidStateType.Jumping then
+            hum.Jump = true
+        else
+            hum.Jump = false
+        end
+        
+        rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.Angles(0, math.rad(_G.ActivityFunctions.currentYaw), 0)
+    end)
+    
+    if WindUI then
+        WindUI:Notify({ 
+            Title = "免控旋轉", 
+            Content = "免控功能已開啟", 
+            Duration = 3 
+        })
+    end
+end
+
+local function stopRotation()
+    _G.ActivityFunctions.rotationActive = false
+    _G.ActivityFunctions.ROTATION_CONFIG.Enabled = false
+    
+    if _G.ActivityFunctions.rotationConnection then
+        _G.ActivityFunctions.rotationConnection:Disconnect()
+        _G.ActivityFunctions.rotationConnection = nil
+    end
+    
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.AutoRotate = true
+            humanoid.Jump = false
+        end
+    end
+    
+    _G.ActivityFunctions.moveKeys = {W=false, A=false, S=false, D=false}
+    _G.ActivityFunctions.jumpHoldRot = false
+    
+    if WindUI then
+        WindUI:Notify({ Title = "免控旋轉", Content = "免控功能已關閉", Duration = 2 })
+    end
+end
+
+-- ===================== 碰撞箱功能 (固定大小 200，完整恢復) =====================
+_G.ActivityFunctions.HITBOX_CONFIG = {
+    Enabled = false,
+    Size = 200,
+}
+
+_G.ActivityFunctions.playerAddedConnection = nil
+_G.ActivityFunctions.characterAddedConnections = {}
+_G.ActivityFunctions.originalSizes = {}
+
+local function saveOriginalSize(player)
+    if not player or player == LocalPlayer then return end
+    if not player.Character then return end
+    
+    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    if root and not _G.ActivityFunctions.originalSizes[player] then
+        _G.ActivityFunctions.originalSizes[player] = root.Size
+    end
+end
+
+local function restoreOriginalSize(player)
+    if not player or player == LocalPlayer then return end
+    if not player.Character then return end
+    
+    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    if root and _G.ActivityFunctions.originalSizes[player] then
+        root.Size = _G.ActivityFunctions.originalSizes[player]
+        root.CanCollide = true
+    end
+end
+
+local function applyHitboxToPlayer(player)
+    if not player or player == LocalPlayer then return end
+    if not player.Character then return end
+    
+    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        if not _G.ActivityFunctions.originalSizes[player] then
+            _G.ActivityFunctions.originalSizes[player] = root.Size
+        end
+        root.CanCollide = false
+        root.Size = Vector3.new(200, 200, 200)
+    end
+end
+
+local function resetHitboxForPlayer(player)
+    if not player or not player.Character then return end
+    
+    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        if _G.ActivityFunctions.originalSizes[player] then
+            root.Size = _G.ActivityFunctions.originalSizes[player]
+        end
+        root.CanCollide = true
+    end
+end
+
+local function applyHitboxToAll()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            applyHitboxToPlayer(player)
+        end
+    end
+end
+
+local function resetHitboxForAll()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            resetHitboxForPlayer(player)
+        end
+    end
+end
+
+local function saveAllOriginalSizes()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            saveOriginalSize(player)
+        end
+    end
+end
+
+local function setupPlayerCharacterConnection(player)
+    if _G.ActivityFunctions.characterAddedConnections[player] then
+        _G.ActivityFunctions.characterAddedConnections[player]:Disconnect()
+    end
+    
+    local connection = player.CharacterAdded:Connect(function(character)
+        task.wait(0.5)
+        if _G.ActivityFunctions.HITBOX_CONFIG.Enabled and player ~= LocalPlayer then
+            local root = character:FindFirstChild("HumanoidRootPart")
+            if root then
+                if not _G.ActivityFunctions.originalSizes[player] then
+                    _G.ActivityFunctions.originalSizes[player] = root.Size
+                end
+                root.CanCollide = false
+                root.Size = Vector3.new(200, 200, 200)
+            end
+        elseif not _G.ActivityFunctions.HITBOX_CONFIG.Enabled and player ~= LocalPlayer then
+            local root = character:FindFirstChild("HumanoidRootPart")
+            if root and _G.ActivityFunctions.originalSizes[player] then
+                root.Size = _G.ActivityFunctions.originalSizes[player]
+                root.CanCollide = true
+            end
+        end
+    end)
+    
+    _G.ActivityFunctions.characterAddedConnections[player] = connection
+end
+
+local function enableHitbox()
+    _G.ActivityFunctions.HITBOX_CONFIG.Enabled = true
+    saveAllOriginalSizes()
+    applyHitboxToAll()
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            setupPlayerCharacterConnection(player)
+        end
+    end
+    
+    if WindUI then
+        WindUI:Notify({ 
+            Title = "碰撞箱修改", 
+            Content = "已開啟", 
+            Duration = 2 
+        })
+    end
+end
+
+local function disableHitbox()
+    _G.ActivityFunctions.HITBOX_CONFIG.Enabled = false
+    resetHitboxForAll()
+    
+    for _, conn in pairs(_G.ActivityFunctions.characterAddedConnections) do
+        conn:Disconnect()
+    end
+    _G.ActivityFunctions.characterAddedConnections = {}
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            setupPlayerCharacterConnection(player)
+        end
+    end
+    
+    if WindUI then
+        WindUI:Notify({ 
+            Title = "碰撞箱修改", 
+            Content = "已關閉", 
+            Duration = 2 
+        })
+    end
+end
+
+_G.ActivityFunctions.playerAddedConnection = Players.PlayerAdded:Connect(function(player)
+    if player ~= LocalPlayer then
+        saveOriginalSize(player)
+        setupPlayerCharacterConnection(player)
+        if _G.ActivityFunctions.HITBOX_CONFIG.Enabled then
+            task.wait(1)
+            applyHitboxToPlayer(player)
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if _G.ActivityFunctions.originalSizes[player] then
+        _G.ActivityFunctions.originalSizes[player] = nil
+    end
+    if _G.ActivityFunctions.characterAddedConnections[player] then
+        _G.ActivityFunctions.characterAddedConnections[player]:Disconnect()
+        _G.ActivityFunctions.characterAddedConnections[player] = nil
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if _G.ActivityFunctions.AUTO_BUDDHA_ENABLED then
+        task.wait(2)
+        startBuddhaLoop()
+    end
+    if _G.ActivityFunctions.ROTATION_CONFIG.Enabled then
+        task.wait(1)
+        stopRotation()
+        task.wait(0.5)
+        startRotation()
+    end
+end)
+
+-- ===================== ActivityTab UI =====================
+
+-- 自動變身大佛＋拿刀
+Tabs.ActivityTab:Toggle({
+    Title = "自動變身大佛＋拿刀",
+    Value = false,
+    Callback = function(state)
+        _G.ActivityFunctions.AUTO_BUDDHA_ENABLED = state
+        if state then
+            startBuddhaLoop()
+            if WindUI then WindUI:Notify({ Title = "自動變佛＋拿刀", Content = "功能已開啟", Duration = 2 }) end
+        else
+            if _G.ActivityFunctions.buddhaTask then
+                task.cancel(_G.ActivityFunctions.buddhaTask)
+                _G.ActivityFunctions.buddhaTask = nil
+            end
+            if WindUI then WindUI:Notify({ Title = "自動變佛＋拿刀", Content = "功能已關閉", Duration = 2 }) end
+        end
+    end
+})
+
+Tabs.ActivityTab:Divider()
+
+-- 聚怪功能
+Tabs.ActivityTab:Input({
+    Title = "聚怪範圍",
+    Value = "100000",
+    Placeholder = "輸入範圍數字",
+    Callback = function(value)
+        SetBringDistance(value)
+    end
+})
+
+Tabs.ActivityTab:Toggle({
+    Title = "⚡ 一鍵聚怪",
+    Value = false,
+    Callback = function(state)
+        _G.ActivityFunctions.SimpleBringMob.Enabled = state
+        if state then
+            StartSimpleBringMob()
+            if WindUI then
+                WindUI:Notify({ 
+                    Title = "聚怪功能", 
+                    Content = string.format("已開啟 - 範圍 %d", _G.ActivityFunctions.SimpleBringMob.Distance), 
+                    Duration = 2
+                })
+            end
+        else
+            StopSimpleBringMob()
+        end
+    end
+})
+
+Tabs.ActivityTab:Divider()
+
+-- 免控旋轉
+Tabs.ActivityTab:Toggle({
+    Title = "免控旋轉",
+    Value = false,
+    Callback = function(state)
+        _G.ActivityFunctions.ROTATION_CONFIG.Enabled = state
+        if state then
+            startRotation()
+        else
+            stopRotation()
+        end
+    end
+})
+
+Tabs.ActivityTab:Divider()
+
+-- 碰撞箱修改
+Tabs.ActivityTab:Toggle({
+    Title = "啟用碰撞箱修改",
+    Value = false,
+    Callback = function(state)
+        if state then
+            enableHitbox()
+        else
+            disableHitbox()
+        end
+    end
+})
+
+Tabs.ActivityTab:Divider()
+
+-- 外部腳本
+Tabs.ActivityTab:Button({
+    Title = "老外tp",
+    Callback = function()
+        if WindUI then WindUI:Notify({ Title = "老外tp", Content = "正在加載腳本...", Duration = 3 }) end
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E8%80%81%E5%A4%96tp"))()
+        end)
+    end
+})
+
+Tabs.ActivityTab:Button({
+    Title = "法天象地",
+    Callback = function()
+        if WindUI then WindUI:Notify({ Title = "法天象地", Content = "正在加載腳本...", Duration = 3 }) end
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E6%B3%95%E5%A4%A9"))()
+        end)
+    end
+})
+      
+-- ===================== 秒殺功能頁 (完整整合版) =====================
+
+-- ==================== 秒殺配置 ====================
+local InstantKillConfig = {
+    Enabled = false,
+    VoidTime = 0.55,
+    TeleportY = -200000,
+    ShowNotifications = true,
+    EnableSaddiHit = true,
+    EnableDoughDrip = true,
+    EnableBuddhaHit = true,
+}
+
+local AimbotConfig = {
+    Enabled = false,
+    Mode = "Specific",
+    TargetPart = "HumanoidRootPart",
+}
+
+local TeleportZxConfig = {
+    TeleportDistance = 5,
+    SkillDelay = 0.3,
+}
+
+-- ==================== 龍拳z秒殺配置 (監聽ZRelease音效自動重置角色) ====================
+local DragonZKillConfig = {
+    Enabled = false,
+    SavedPosition = nil,
+    LoopThread = nil,
+    TrackedSounds = {},
+    SoundDetectionConnection = nil,
+}
+
+-- ==================== 創造z秒殺配置 (虛空傳送開關) ====================
+local CreateZConfig = {
+    Enabled = false,
+    SavedPosition = nil,
+    LoopThread = nil,
+}
+
+-- ==================== 虛空連招狀態 ====================
+local VoidComboState = {
+    IsRunning = false,
+}
+
+-- ==================== 變數區 ====================
+local voidCharacter
+local voidRoot
+local VoidState = { IsTeleporting = false }
+local trackedSounds = {}
+local killConnection = nil
+
+local sharedPlayerList = {}
+local sharedPlayerMap = {}
+local selectedTargetPlayer = nil
+local aimbotConnection = nil
+
+-- UI 組件變數
+local killButton = nil
+local aimbotButton = nil
+local sharedPlayerDropdown = nil
+local targetStatusParagraph = nil
+local aimbotModeDropdown = nil
+local saddiHitToggle = nil
+local doughDripToggle = nil
+local buddhaHitToggle = nil
+local dragonZKillButton = nil
+local createZButton = nil
+
+-- ==================== 秒殺核心功能 ====================
+local function SetupVoidCharacter(char)
+    voidCharacter = char
+    voidRoot = char:WaitForChild("HumanoidRootPart")
+end
+
+if LocalPlayer.Character then SetupVoidCharacter(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(SetupVoidCharacter)
+
+local function TPVoid(preSavedCFrame)
+    if VoidState.IsTeleporting or not InstantKillConfig.Enabled then return end
+    if not voidRoot or not voidCharacter then return end
+    local humanoid = voidCharacter:FindFirstChild("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    
+    VoidState.IsTeleporting = true
+    
+    if InstantKillConfig.ShowNotifications then
+        WindUI:Notify({ Title = "秒殺觸發", Content = "閃避攻擊並傳送至虛空", Duration = 1, Icon = "zap" })
+    end
+    
+    local heartbeatConn
+    heartbeatConn = RunService.Heartbeat:Connect(function()
+        if voidRoot then
+            local pos = voidRoot.Position
+            voidRoot.CFrame = CFrame.new(pos.X, InstantKillConfig.TeleportY, pos.Z)
+            voidRoot.AssemblyLinearVelocity = Vector3.zero
+        end
+    end)
+    
+    task.wait(InstantKillConfig.VoidTime)
+    if heartbeatConn then heartbeatConn:Disconnect() end
+    
+    if voidRoot and humanoid.Health > 0 then
+        voidRoot.CFrame = preSavedCFrame + Vector3.new(0, 0.5, 0)
+        voidRoot.AssemblyLinearVelocity = Vector3.zero
+        voidRoot.AssemblyAngularVelocity = Vector3.zero
+    end
+    
+    task.wait(0.1)
+    VoidState.IsTeleporting = false
+end
+
+local function StartInstantKill()
+    if killConnection then killConnection:Disconnect() end
+    trackedSounds = {}
+    
+    local soundsFolder = workspace:FindFirstChild("_WorldOrigin") or Instance.new("Folder")
+    if not soundsFolder.Parent then
+        soundsFolder.Name = "_WorldOrigin"
+        soundsFolder.Parent = workspace
+    end
+    local sounds = soundsFolder:FindFirstChild("Sounds") or Instance.new("Folder")
+    if not sounds.Parent then
+        sounds.Name = "Sounds"
+        sounds.Parent = soundsFolder
+    end
+    
+    killConnection = RunService.RenderStepped:Connect(function()
+        if not InstantKillConfig.Enabled or not voidRoot then return end
+        for _, obj in ipairs(sounds:GetDescendants()) do
+            if obj:IsA("Sound") and not trackedSounds[obj] then
+                local shouldTrigger = false
+                local soundName = obj.Name
+                
+                if soundName == "SaddiHit" or soundName == "SaishiHit" then
+                    shouldTrigger = InstantKillConfig.EnableSaddiHit
+                elseif soundName == "DoughDrip" then
+                    shouldTrigger = InstantKillConfig.EnableDoughDrip
+                elseif soundName == "Buddha2pickup" or soundName == "BuddhaHit" then
+                    shouldTrigger = InstantKillConfig.EnableBuddhaHit
+                end
+                
+                if shouldTrigger then
+                    trackedSounds[obj] = true
+                    TPVoid(voidRoot.CFrame)
+                end
+            end
+        end
+        for soundObj in pairs(trackedSounds) do
+            if not soundObj:IsDescendantOf(sounds) then trackedSounds[soundObj] = nil end
+        end
+    end)
+    
+    WindUI:Notify({ Title = "秒殺功能", Content = "已開啟 - 自動閃避攻擊", Duration = 3, Icon = "zap" })
+end
+
+local function StopInstantKill()
+    if killConnection then killConnection:Disconnect() end
+    trackedSounds = {}
+    VoidState.IsTeleporting = false
+    WindUI:Notify({ Title = "秒殺功能", Content = "已關閉", Duration = 2 })
+end
+
+-- ==================== 玩家列表功能 ====================
+local function RefreshSharedPlayerList()
+    sharedPlayerList = {}
+    sharedPlayerMap = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(sharedPlayerList, p.Name)
+            sharedPlayerMap[p.Name] = p
+        end
+    end
+end
+
+local function IsTargetAlive(player)
+    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hum = player.Character:FindFirstChildOfClass("Humanoid")
+        return hum and hum.Health > 0
+    end
+    return false
+end
+
+local function GetNearestPlayer()
+    local nearestPlayer = nil
+    local nearestDistance = math.huge
+    
+    local localChar = LocalPlayer.Character
+    if not localChar then return nil end
+    
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return nil end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local targetChar = player.Character
+            if targetChar then
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    local distance = (localRoot.Position - targetRoot.Position).Magnitude
+                    if distance < nearestDistance then
+                        nearestDistance = distance
+                        nearestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+    
+    return nearestPlayer, nearestDistance
+end
+
+-- ==================== 鎖人功能 ====================
+local function StartAimbot()
+    if aimbotConnection then aimbotConnection:Disconnect() end
+    
+    aimbotConnection = RunService.RenderStepped:Connect(function()
+        if not AimbotConfig.Enabled then return end
+        
+        local targetToAim = nil
+        
+        if AimbotConfig.Mode == "Specific" then
+            targetToAim = selectedTargetPlayer
+        elseif AimbotConfig.Mode == "Nearest" then
+            targetToAim = GetNearestPlayer()
+        end
+        
+        if targetToAim and IsTargetAlive(targetToAim) then
+            local targetObj = targetToAim.Character and targetToAim.Character:FindFirstChild(AimbotConfig.TargetPart)
+            if targetObj then
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetObj.Position)
+            end
+        end
+    end)
+end
+
+local function StopAimbot()
+    if aimbotConnection then aimbotConnection:Disconnect() end
+end
+
+local function SwitchAimbotMode(mode)
+    AimbotConfig.Mode = mode
+    
+    if aimbotButton then
+        local statusText = AimbotConfig.Enabled and "開啟" or "關閉"
+        if mode == "Specific" then
+            aimbotButton:SetTitle("鎖人功能 [" .. statusText .. "] - 鎖定特定人")
+        else
+            aimbotButton:SetTitle("鎖人功能 [" .. statusText .. "] - 鎖定最近")
+        end
+    end
+    
+    if targetStatusParagraph then
+        if mode == "Specific" then
+            targetStatusParagraph:SetDesc(selectedTargetPlayer and "當前目標: " .. selectedTargetPlayer.Name or "尚未選擇 (特定模式)")
+        else
+            local nearest, dist = GetNearestPlayer()
+            if nearest then
+                targetStatusParagraph:SetDesc("最近目標: " .. nearest.Name .. " (距離: " .. math.floor(dist) .. "m)")
+            else
+                targetStatusParagraph:SetDesc("最近目標: 無玩家在場")
+            end
+        end
+    end
+    
+    WindUI:Notify({ 
+        Title = "鎖人模式", 
+        Content = mode == "Specific" and "已切換為【鎖定特定人】模式" or "已切換為【鎖定最近的人】模式", 
+        Duration = 2 
+    })
+end
+
+-- ==================== 傳送+ZX功能 ====================
+local function PerformTeleportAndZx()
+    local teleportTarget = nil
+    
+    if AimbotConfig.Mode == "Specific" then
+        teleportTarget = selectedTargetPlayer
+        if not teleportTarget then
+            WindUI:Notify({ Title = "傳送+ZX", Content = "請先選擇目標玩家", Duration = 2, Icon = "alert-triangle" })
+            return false
+        end
+    elseif AimbotConfig.Mode == "Nearest" then
+        teleportTarget = GetNearestPlayer()
+        if not teleportTarget then
+            WindUI:Notify({ Title = "傳送+ZX", Content = "附近沒有玩家", Duration = 2, Icon = "alert-triangle" })
+            return false
+        end
+    end
+    
+    if not teleportTarget.Character or not teleportTarget.Character:FindFirstChild("HumanoidRootPart") then
+        WindUI:Notify({ Title = "傳送+ZX", Content = "目標玩家無效", Duration = 2 })
+        return false
+    end
+    
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        WindUI:Notify({ Title = "傳送+ZX", Content = "找不到你的角色", Duration = 2 })
+        return false
+    end
+    
+    local hrp = character.HumanoidRootPart
+    local targetRoot = teleportTarget.Character.HumanoidRootPart
+    if not hrp or not targetRoot then return false end
+    
+    local direction = (targetRoot.Position - hrp.Position).Unit
+    local teleportPos = targetRoot.Position - direction * TeleportZxConfig.TeleportDistance
+    
+    local savedCollision = {}
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            savedCollision[part] = part.CanCollide
+            part.CanCollide = false
+        end
+    end
+    
+    hrp.CFrame = CFrame.new(teleportPos, targetRoot.Position)
+    hrp.Velocity = Vector3.zero
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    
+    local modeText = AimbotConfig.Mode == "Specific" and teleportTarget.Name or "最近玩家"
+    WindUI:Notify({ Title = "傳送+ZX", Content = "已傳送到 " .. modeText .. " 附近", Duration = 1 })
+    
+    local virtualInput = game:GetService("VirtualInputManager")
+    virtualInput:SendKeyEvent(true, Enum.KeyCode.Z, false, nil)
+    task.wait(0.1)
+    virtualInput:SendKeyEvent(false, Enum.KeyCode.Z, false, nil)
+    
+    task.wait(TeleportZxConfig.SkillDelay)
+    
+    virtualInput:SendKeyEvent(true, Enum.KeyCode.X, false, nil)
+    task.wait(0.1)
+    virtualInput:SendKeyEvent(false, Enum.KeyCode.X, false, nil)
+    
+    for part, canCollide in pairs(savedCollision) do
+        if part and part.Parent then pcall(function() part.CanCollide = canCollide end) end
+    end
+    
+    WindUI:Notify({ Title = "傳送+ZX", Content = "已施放 Z + X 技能", Duration = 1 })
+    return true
+end
+
+-- ==================== 龍拳z秒殺 (監聽ZRelease音效自動重置角色) ====================
+local function ResetCharacter_DragonZ()
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Health = 0
+            print("角色已重置 (偵測到 ZRelease 音效)")
+        end
+    end
+end
+
+local function ReturnToPosition_DragonZ()
+    if not DragonZKillConfig.SavedPosition then return end
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = DragonZKillConfig.SavedPosition
+        end
+    end
+end
+
+local function SavePosition_DragonZ()
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            DragonZKillConfig.SavedPosition = root.CFrame
+        end
+    end
+end
+
+local function DragonZKill_Loop()
+    while DragonZKillConfig.Enabled do
+        local char = LocalPlayer.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = CFrame.new(0, 7e29, 0)
+            end
+        end
+        task.wait()
+    end
+end
+
+local function StartDragonZSoundDetection()
+    if DragonZKillConfig.SoundDetectionConnection then
+        DragonZKillConfig.SoundDetectionConnection:Disconnect()
+    end
+    
+    DragonZKillConfig.TrackedSounds = {}
+    
+    DragonZKillConfig.SoundDetectionConnection = RunService.RenderStepped:Connect(function()
+        if not DragonZKillConfig.Enabled then return end
+        
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name == "ZRelease" and obj:IsA("Sound") and obj.IsPlaying and not DragonZKillConfig.TrackedSounds[obj] then
+                DragonZKillConfig.TrackedSounds[obj] = true
+                ResetCharacter_DragonZ()
+            end
+        end
+        
+        local char = LocalPlayer.Character
+        if char then
+            for _, obj in ipairs(char:GetDescendants()) do
+                if obj.Name == "ZRelease" and obj:IsA("Sound") and obj.IsPlaying and not DragonZKillConfig.TrackedSounds[obj] then
+                    DragonZKillConfig.TrackedSounds[obj] = true
+                    ResetCharacter_DragonZ()
+                end
+            end
+        end
+        
+        for soundObj in pairs(DragonZKillConfig.TrackedSounds) do
+            if not soundObj.Parent or not soundObj.IsPlaying then
+                DragonZKillConfig.TrackedSounds[soundObj] = nil
+            end
+        end
+    end)
+    print("龍拳z秒殺聲音監聽已啟動")
+end
+
+local function StopDragonZSoundDetection()
+    if DragonZKillConfig.SoundDetectionConnection then
+        DragonZKillConfig.SoundDetectionConnection:Disconnect()
+        DragonZKillConfig.SoundDetectionConnection = nil
+        DragonZKillConfig.TrackedSounds = {}
+        print("龍拳z秒殺聲音監聽已停止")
+    end
+end
+
+local function ToggleDragonZKill()
+    if DragonZKillConfig.Enabled then
+        DragonZKillConfig.Enabled = false
+        
+        if DragonZKillConfig.LoopThread then
+            task.cancel(DragonZKillConfig.LoopThread)
+            DragonZKillConfig.LoopThread = nil
+        end
+        
+        StopDragonZSoundDetection()
+        ReturnToPosition_DragonZ()
+        
+        if dragonZKillButton then
+            dragonZKillButton:SetTitle("龍拳z秒殺 [關閉]")
+        end
+        
+        WindUI:Notify({ Title = "龍拳z秒殺", Content = "已關閉，已回到原地", Duration = 2 })
+    else
+        DragonZKillConfig.Enabled = true
+        SavePosition_DragonZ()
+        StartDragonZSoundDetection()
+        DragonZKillConfig.LoopThread = task.spawn(DragonZKill_Loop)
+        
+        if dragonZKillButton then
+            dragonZKillButton:SetTitle("龍拳z秒殺 [運作中]")
+        end
+        
+        WindUI:Notify({ 
+            Title = "龍拳z秒殺", 
+            Content = "已開啟 - 監聽 ZRelease 音效自動重置角色", 
+            Duration = 4 
+        })
+    end
+end
+
+-- ==================== 創造z秒殺 (虛空傳送開關) ====================
+local function SavePosition_CreateZ()
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            CreateZConfig.SavedPosition = root.CFrame
+        end
+    end
+end
+
+local function ReturnToPosition_CreateZ()
+    if not CreateZConfig.SavedPosition then return end
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = CreateZConfig.SavedPosition
+        end
+    end
+end
+
+local function CreateZ_Loop()
+    while CreateZConfig.Enabled do
+        local char = LocalPlayer.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = CFrame.new(0, 7e29, 0)
+            end
+        end
+        task.wait()
+    end
+end
+
+local function ToggleCreateZ()
+    if CreateZConfig.Enabled then
+        CreateZConfig.Enabled = false
+        if CreateZConfig.LoopThread then
+            task.cancel(CreateZConfig.LoopThread)
+            CreateZConfig.LoopThread = nil
+        end
+        ReturnToPosition_CreateZ()
+        
+        if createZButton then
+            createZButton:SetTitle("龍拳z秒殺 創造z秒殺 雷爪拳圖 龍刀拳圖 [關閉]")
+        end
+        
+        WindUI:Notify({ Title = "創造z秒殺", Content = "已關閉，已回到原地", Duration = 2 })
+    else
+        CreateZConfig.Enabled = true
+        SavePosition_CreateZ()
+        CreateZConfig.LoopThread = task.spawn(CreateZ_Loop)
+        
+        if createZButton then
+            createZButton:SetTitle("龍拳z秒殺 創造z秒殺 雷爪拳圖 龍刀拳圖 [運作中]")
+        end
+        
+        WindUI:Notify({ 
+            Title = "創造z秒殺", 
+            Content = "已開啟 - 虛空傳送中", 
+            Duration = 4 
+        })
+    end
+end
+
+-- ==================== 雷爪z龍刀z全圖 ====================
+local function PerformVoidCombo()
+    if VoidComboState.IsRunning then return end
+    VoidComboState.IsRunning = true
+    
+    local char = LocalPlayer.Character
+    if not char then
+        VoidComboState.IsRunning = false
+        return
+    end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then
+        VoidComboState.IsRunning = false
+        return
+    end
+    
+    local posX = root.Position.X
+    local posY = root.Position.Y
+    local posZ = root.Position.Z
+    local originalCFrame = root.CFrame
+    
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Z, false, nil)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Z, false, nil)
+    
+    task.wait(0.14)
+    root.CFrame = CFrame.new(posX, 7e29, posZ)
+    task.wait(0.15)
+    
+    root.CFrame = originalCFrame
+    
+    task.delay(0.5, function()
+        if root and root.Parent then
+            local currentY = root.Position.Y
+            if currentY > 100000 then
+                root.CFrame = CFrame.new(posX, posY, posZ)
+            end
+        end
+    end)
+    
+    VoidComboState.IsRunning = false
+end
+
+-- 角色重生處理
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if DragonZKillConfig.Enabled then
+        task.wait(0.5)
+        SavePosition_DragonZ()
+    end
+    if CreateZConfig.Enabled then
+        task.wait(0.5)
+        SavePosition_CreateZ()
+    end
+end)
+
+-- 首次儲存位置
+if LocalPlayer.Character then
+    local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        DragonZKillConfig.SavedPosition = root.CFrame
+        CreateZConfig.SavedPosition = root.CFrame
+    end
+end
+
+-- ==================== UI 介面 ====================
+
+RefreshSharedPlayerList()
+
+-- 秒殺開關
+killButton = Tabs.InstantKillTab:Button({
+    Title = "秒殺功能 [關閉]",
+    Callback = function()
+        if not InstantKillConfig.Enabled then
+            InstantKillConfig.Enabled = true
+            StartInstantKill()
+            killButton:SetTitle("秒殺功能 [開啟]")
+            WindUI:Notify({ Title = "秒殺功能", Content = "已開啟 - 自動閃避攻擊", Duration = 4, Icon = "zap" })
+        else
+            InstantKillConfig.Enabled = false
+            StopInstantKill()
+            killButton:SetTitle("秒殺功能 [關閉]")
+            WindUI:Notify({ Title = "秒殺功能", Content = "已關閉", Duration = 2 })
+        end
+    end
+})
+
+Tabs.InstantKillTab:Divider()
+
+-- 三種音效開關
+saddiHitToggle = Tabs.InstantKillTab:Toggle({
+    Title = "Saishi",
+    Value = true,
+    Callback = function(state)
+        InstantKillConfig.EnableSaddiHit = state
+        WindUI:Notify({ Title = "Saishi觸發", Content = state and "已開啟" or "已關閉", Duration = 2 })
+    end
+})
+
+doughDripToggle = Tabs.InstantKillTab:Toggle({
+    Title = "諾叉 (DoughDrip)",
+    Value = true,
+    Callback = function(state)
+        InstantKillConfig.EnableDoughDrip = state
+        WindUI:Notify({ Title = "諾叉觸發", Content = state and "已開啟" or "已關閉", Duration = 2 })
+    end
+})
+
+buddhaHitToggle = Tabs.InstantKillTab:Toggle({
+    Title = "佛 (Buddha)",
+    Value = true,
+    Callback = function(state)
+        InstantKillConfig.EnableBuddhaHit = state
+        WindUI:Notify({ Title = "佛觸發", Content = state and "已開啟" or "已關閉", Duration = 2 })
+    end
+})
+
+Tabs.InstantKillTab:Divider()
+
+-- 鎖人模式選擇
+aimbotModeDropdown = Tabs.InstantKillTab:Dropdown({
+    Title = "鎖人模式",
+    Values = {"鎖定特定人", "鎖定最近的人"},
+    Value = "鎖定特定人",
+    Callback = function(selected)
+        if selected == "鎖定特定人" then
+            SwitchAimbotMode("Specific")
+        else
+            SwitchAimbotMode("Nearest")
+        end
+    end
+})
+
+Tabs.InstantKillTab:Divider()
+
+-- 目標玩家選擇
+Tabs.InstantKillTab:Button({
+    Title = "刷新玩家列表",
+    Callback = function()
+        RefreshSharedPlayerList()
+        if sharedPlayerDropdown then
+            local displayList = #sharedPlayerList > 0 and sharedPlayerList or {"暫無其他玩家"}
+            sharedPlayerDropdown:Refresh(displayList)
+        end
+        if targetStatusParagraph then
+            if AimbotConfig.Mode == "Specific" then
+                targetStatusParagraph:SetDesc(selectedTargetPlayer and "當前目標: " .. selectedTargetPlayer.Name or "尚未選擇")
+            else
+                local nearest, dist = GetNearestPlayer()
+                if nearest then
+                    targetStatusParagraph:SetDesc("最近目標: " .. nearest.Name .. " (距離: " .. math.floor(dist) .. "m)")
+                else
+                    targetStatusParagraph:SetDesc("最近目標: 無玩家在場")
+                end
+            end
+        end
+        WindUI:Notify({ Title = "玩家列表", Content = "已更新，找到 " .. #sharedPlayerList .. " 位玩家", Duration = 2 })
+    end
+})
+
+sharedPlayerDropdown = Tabs.InstantKillTab:Dropdown({
+    Title = "選擇目標玩家",
+    Values = sharedPlayerList,
+    Value = "請選擇玩家",
+    Callback = function(selected)
+        if selected ~= "請選擇玩家" and selected ~= "暫無其他玩家" then
+            selectedTargetPlayer = sharedPlayerMap[selected]
+            if targetStatusParagraph and AimbotConfig.Mode == "Specific" then
+                targetStatusParagraph:SetDesc("當前目標: " .. selectedTargetPlayer.Name)
+            end
+            WindUI:Notify({ Title = "目標選擇", Content = "已選擇: " .. selectedTargetPlayer.Name, Duration = 3 })
+        end
+    end
+})
+
+targetStatusParagraph = Tabs.InstantKillTab:Paragraph({ Title = "當前狀態", Desc = "尚未選擇", Image = "target" })
+
+Tabs.InstantKillTab:Divider()
+
+-- 鎖人功能
+aimbotButton = Tabs.InstantKillTab:Button({
+    Title = "鎖人功能 [關閉] - 鎖定特定人",
+    Callback = function()
+        if not AimbotConfig.Enabled then
+            if AimbotConfig.Mode == "Specific" and not selectedTargetPlayer then
+                WindUI:Notify({ Title = "提示", Content = "請先選擇目標玩家", Duration = 3, Icon = "alert-triangle" })
+                return
+            end
+            
+            AimbotConfig.Enabled = true
+            StartAimbot()
+            
+            local modeText = AimbotConfig.Mode == "Specific" and "鎖定特定人" or "鎖定最近的人"
+            aimbotButton:SetTitle("鎖人功能 [開啟] - " .. modeText)
+            
+            local targetText = ""
+            if AimbotConfig.Mode == "Specific" and selectedTargetPlayer then
+                targetText = " - 目標: " .. selectedTargetPlayer.Name
+            elseif AimbotConfig.Mode == "Nearest" then
+                local nearest, dist = GetNearestPlayer()
+                if nearest then
+                    targetText = " - 最近: " .. nearest.Name .. " (" .. math.floor(dist) .. "m)"
+                else
+                    targetText = " - 無玩家在場"
+                end
+            end
+            
+            WindUI:Notify({ Title = "鎖人功能", Content = "已開啟 - " .. modeText .. targetText, Duration = 2 })
+        else
+            AimbotConfig.Enabled = false
+            StopAimbot()
+            
+            local modeText = AimbotConfig.Mode == "Specific" and "鎖定特定人" or "鎖定最近的人"
+            aimbotButton:SetTitle("鎖人功能 [關閉] - " .. modeText)
+            WindUI:Notify({ Title = "鎖人功能", Content = "已關閉", Duration = 2 })
+        end
+    end
+})
+
+Tabs.InstantKillTab:Divider()
+
+-- 傳送+ZX功能
+Tabs.InstantKillTab:Slider({
+    Title = "傳送距離",
+    Value = { Min = 1, Max = 20, Default = 5 },
+    Callback = function(value)
+        TeleportZxConfig.TeleportDistance = value
+        WindUI:Notify({ Title = "傳送距離", Content = "已設置為: " .. value .. " 單位", Duration = 2 })
+    end
+})
+
+Tabs.InstantKillTab:Input({
+    Title = "Z/X 技能延遲 (秒)",
+    Value = tostring(TeleportZxConfig.SkillDelay),
+    Placeholder = "輸入延遲秒數 (0.05 ~ 5.0)",
+    Callback = function(value)
+        local delay = tonumber(value)
+        if delay and delay >= 0.05 and delay <= 5 then
+            TeleportZxConfig.SkillDelay = delay
+            WindUI:Notify({ Title = "技能延遲", Content = "Z和X之間延遲: " .. delay .. " 秒", Duration = 2 })
+        else
+            WindUI:Notify({ Title = "錯誤", Content = "請輸入 0.05 到 5 之間的數字", Duration = 2, Icon = "alert-triangle" })
+        end
+    end
+})
+
+Tabs.InstantKillTab:Button({
+    Title = "傳送+ZX",
+    Callback = function()
+        PerformTeleportAndZx()
+    end
+})
+
+Tabs.InstantKillTab:Divider()
+
+-- 龍拳z秒殺 (監聽ZRelease音效自動重置角色)
+dragonZKillButton = Tabs.InstantKillTab:Button({
+    Title = "龍拳z秒殺 [關閉]",
+    Callback = function()
+        ToggleDragonZKill()
+    end
+})
+
+Tabs.InstantKillTab:Divider()
+
+-- 創造z秒殺 (虛空傳送開關)
+createZButton = Tabs.InstantKillTab:Button({
+    Title = "龍拳z秒殺 創造z秒殺 雷爪拳圖 龍刀拳圖 [關閉]",
+    Callback = function()
+        ToggleCreateZ()
+    end
+})
+
+Tabs.InstantKillTab:Divider()
+
+-- 雷爪z龍刀z全圖
+Tabs.InstantKillTab:Button({
+    Title = "雷爪z龍刀z全圖",
+    Callback = function()
+        PerformVoidCombo()
+    end
+})
+
+-- ==================== 即時更新最近目標狀態 ====================
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if AimbotConfig.Mode == "Nearest" and targetStatusParagraph and not AimbotConfig.Enabled then
+            local nearest, dist = GetNearestPlayer()
+            if nearest then
+                targetStatusParagraph:SetDesc("最近目標: " .. nearest.Name .. " (距離: " .. math.floor(dist) .. "m)")
+            else
+                targetStatusParagraph:SetDesc("最近目標: 無玩家在場")
+            end
+        end
+    end
+end)
+
+-- ==================== 玩家目標離開檢測 ====================
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if selectedTargetPlayer then
+            local found = false
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p == selectedTargetPlayer then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                local targetName = selectedTargetPlayer.Name
+                selectedTargetPlayer = nil
+                if targetStatusParagraph and AimbotConfig.Mode == "Specific" then
+                    targetStatusParagraph:SetDesc("尚未選擇 (目標已離開)")
+                end
+                WindUI:Notify({ 
+                    Title = "目標離開", 
+                    Content = targetName .. " 已離開遊戲，目標已清除", 
+                    Duration = 3,
+                    Icon = "alert-triangle"
+                })
+                if AimbotConfig.Enabled and AimbotConfig.Mode == "Specific" then
+                    AimbotConfig.Enabled = false
+                    StopAimbot()
+                    aimbotButton:SetTitle("鎖人功能 [關閉] - 鎖定特定人")
+                end
+            end
+        end
+    end
+end)
+        
+        -- ===================== 特效顏色更換 =====================
+        Tabs.texiaoTab:Paragraph({
+            Title = "特效更換",
+            Desc = "只有你自己能看到",
+            Image = "info",
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "白色",
+            Callback = function()
+                WindUI:Notify({ Title = "白色", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E7%99%BD"))()
+                end)
+            end
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "藍色",
+            Callback = function()
+                WindUI:Notify({ Title = "藍色", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E8%97%8D"))()
+                end)
+            end
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "紅色",
+            Callback = function()
+                WindUI:Notify({ Title = "紅色", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E6%B4%AA"))()
+                end)
+            end
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "綠色",
+            Callback = function()
+                WindUI:Notify({ Title = "綠色", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E7%B6%A0"))()
+                end)
+            end
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "七彩炫光",
+            Callback = function()
+                WindUI:Notify({ Title = "七彩炫光", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E6%8E%A1"))()
+                end)
+            end
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "地獄火",
+            Callback = function()
+                WindUI:Notify({ Title = "地獄火", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E5%9C%B0%E5%9F%9F"))()
+                end)
+            end
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "未來科技（稍微卡頓）",
+            Callback = function()
+                WindUI:Notify({ Title = "未來科技", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E6%9C%AA%E4%BE%86"))()
+                end)
+            end
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "生化危機",
+            Callback = function()
+                WindUI:Notify({ Title = "生化危機", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E7%94%9F%E5%8C%96"))()
+                end)
+            end
+        })
+        
+        Tabs.texiaoTab:Button({
+            Title = "電磁脈衝",
+            Callback = function()
+                WindUI:Notify({ Title = "電磁脈衝", Content = "正在加載腳本...", Duration = 3 })
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/56123asda/546546/refs/heads/main/%E9%9B%BB%E6%B1%A0"))()
+                end)
+            end
+        })
+        
+        -- ===================== 主題顏色標籤頁 =====================
+        local currentThemeName = WindUI:GetCurrentTheme()
+        local availableThemes = WindUI:GetThemes()
+        
+        local themeList = {}
+        for themeName, _ in pairs(availableThemes) do
+            table.insert(themeList, themeName)
+        end
+        
+        Tabs.ThemeTab:Dropdown({
+            Title = "選擇主題",
+            Values = themeList,
+            Value = currentThemeName,
+            Callback = function(selectedTheme)
+                WindUI:SetTheme(selectedTheme)
+                WindUI:Notify({
+                    Title = "主題切換",
+                    Content = "已切換到 " .. selectedTheme .. " 主題",
+                    Icon = "palette",
+                    Duration = 3
+                })
+            end
+        })
+        
+        -- ===================== 腳本完成 =====================
+        task.wait(1)
+        WindUI:Notify({
+            Title = "小傑腳本",
+            Content = "加載完成",
+            Duration = 5,
+        })
+        
+        Window:OnClose(function()
+            WindUI:Notify({
+                Title = "小傑腳本中心",
+                Content = "界面已關閉\n按 N 重新打開",
+                Duration = 3,
+            })
+        end)
+        
+        -- 命令系統
+        local function updateChatCommands()
+            game:GetService("Players").LocalPlayer.Chatted:Connect(function(msg)
+                msg = msg:lower()
+                
+                if msg == "/esp on" then
+                    enableESPPro()
+               elseif msg == "/esp off" then
+                    disableESPPro()
+                elseif msg == "/attack on" then
+                    AttackConfig.Enabled = true
+                    startAttackLoop()
+                    WindUI:Notify({ Title = "快速攻擊", Content = "已開啟", Duration = 2 })
+                elseif msg == "/attack off" then
+                    AttackConfig.Enabled = false
+                    if attackConnection then
+                        attackConnection:Disconnect()
+                        attackConnection = nil
+                    end
+                    WindUI:Notify({ Title = "快速攻擊", Content = "已關閉", Duration = 2 })
+                elseif msg == "/attack status" then
+                    print("快速攻擊系統狀態:")
+                    print("啟用: " .. (AttackConfig.Enabled and "是" or "否"))
+                    print("攻擊範圍: " .. AttackConfig.AttackDistance)
+                    print("攻擊速度: " .. AttackConfig.AttackDelay .. "秒")
+                    print("攻擊怪物: " .. (AttackConfig.AttackMobs and "是" or "否"))
+                    print("攻擊玩家: " .. (AttackConfig.AttackPlayers and "是" or "否"))
+                elseif msg == "/rotation on" then
+                    ROTATION_CONFIG.Enabled = true
+                    startRotation()
+                elseif msg == "/rotation off" then
+                    ROTATION_CONFIG.Enabled = false
+                    stopRotation()
+                elseif msg == "/jump on" then
+                    setJumpEnabled(true)
+                elseif msg == "/jump off" then
+                    setJumpEnabled(false)
+                elseif msg == "/hp on" then
+                    HealthDetectConfig.Enabled = true
+                    resetAllHealthStates()
+                    startHealthDetection()
+                    WindUI:Notify({ Title = "血量偵測（智能模式）", Content = "已開啟（無冷卻）", Duration = 2 })
+                elseif msg == "/hp off" then
+                    HealthDetectConfig.Enabled = false
+                    resetAllHealthStates()
+                    WindUI:Notify({ Title = "血量偵測", Content = "已關閉", Duration = 2 })
+                elseif msg == "/bring on" then
+                    SimpleBringMob.Enabled = true
+                    StartSimpleBringMob()
+                    WindUI:Notify({ Title = "聚怪功能", Content = "已開啟 (可能只有視覺效果)", Duration = 2 })
+                elseif msg == "/bring off" then
+                    SimpleBringMob.Enabled = false
+                    StopSimpleBringMob()
+                    WindUI:Notify({ Title = "聚怪功能", Content = "已關閉", Duration = 2 })
+                elseif msg == "/water on" then
+                    SetWaterWalk(true)
+                    StartWaterWalkLoop()
+                    WindUI:Notify({ Title = "水上行走", Content = "已開啟", Duration = 2 })
+                elseif msg == "/water off" then
+                    SetWaterWalk(false)
+                    if waterWalkLoop then
+                        task.cancel(waterWalkLoop)
+                        waterWalkLoop = nil
+                    end
+                    WindUI:Notify({ Title = "水上行走", Content = "已關閉", Duration = 2 })
+                elseif msg == "/instantkill on" then
+                    InstantKillConfig.Enabled = true
+                    StartInstantKill()
+                    WindUI:Notify({ Title = "秒殺功能", Content = "已開啟", Duration = 2 })
+                elseif msg == "/instantkill off" then
+                    InstantKillConfig.Enabled = false
+                    StopInstantKill()
+                    WindUI:Notify({ Title = "秒殺功能", Content = "已關閉", Duration = 2 })
+                elseif msg == "/aimbot on" then
+                    if not selectedAimbotTarget then
+                        WindUI:Notify({ Title = "提示", Content = "請先選擇自瞄目標", Duration = 2 })
+                        return
+                    end
+                    AimbotConfig.Enabled = true
+                    StartAimbot()
+                    WindUI:Notify({ Title = "自瞄功能", Content = "已開啟", Duration = 2 })
+                elseif msg == "/aimbot off" then
+                    AimbotConfig.Enabled = false
+                    StopAimbot()
+                    WindUI:Notify({ Title = "自瞄功能", Content = "已關閉", Duration = 2 })
+                end
+            end)
+        end
+        
+        updateChatCommands()
+        
+        local function createCommands()
+            print("\n可用命令:")
+            print("/attack on/off - 快速攻擊開關")
+            print("/attack status - 查看攻擊狀態")
+            print("/esp on/off - ESP開關")
+            print("/rotation on/off - 免控旋轉開關")
+            print("/jump on/off - 跳躍修改開關")
+            print("/hp on/off - 血量偵測傳送開關")
+            print("/bring on/off - 聚怪功能開關")
+            print("/water on/off - 水上行走開關")
+            print("/instantkill on/off - 秒殺功能開關")
+            print("/aimbot on/off - 自瞄功能開關")
+            print("========================================")
+        end
+        
+        createCommands()
+        
+        print("小傑腳本已完全加載完成！")
+        print("✅ 秒殺功能（虛空閃避）已整合！")
+        print("✅ 自瞄功能（自動鎖定）已整合！")
+        print("✅ 快速攻擊系統已整合！")
+        print("✅ 免控旋轉功能已添加！")
+        print("✅ 跳躍高度修改功能已添加（範圍10-1000）！")
+        print("✅ 血量自動偵測傳送功能已添加（智能觸發 + 無限傳送 + 無冷卻）！")
+        print("✅ 追蹤傳送 + 直接傳送 + 單次傳送三合一系統已整合！")
+        print("✅ 循環傳送已獨立設定，只能設定 Y 軸！")
+        print("✅ 追蹤傳送新增速度調整功能！")
+        print("✅ 追蹤傳送完全不受飛行影響！")
+        print("✅ 追蹤傳送開啟時自動穿牆，關閉時完全恢復碰撞！")
+        print("✅ 玩家列表重新載入功能已完成！")
+        print("✅ 手機跳躍功能已整合！")
+        print("✅ 水上行走功能已整合！")
+        print("✅ 聚怪功能已整合！")
+        print("✅ FOV 視角範圍功能已新增！")
+        print("✅ 時間神殿傳送點已新增！")
+    end)
+    
+    if not success then
+        warn("載入失敗: " .. tostring(err))
+        LoadButton.Text = "✨ 載入修改後的腳本"
+        LoadButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        LoadButton.Active = true
+    end
+end)
+
+-- 允許拖動視窗
+local function makeDraggable()
+    local dragging = false
+    local dragStart
+    local startPos
+
+    MainFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+end
+
+makeDraggable()
+
+-- 初始化
+updateToggle()
